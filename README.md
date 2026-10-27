@@ -10,9 +10,9 @@
 
 ![拾语角色聊天界面](docs/images/shiyu-current-chat.png)
 
-## 与岗位要求的对应情况
 
-| 岗位方向 | 项目证据与当前边界 |
+
+| 项目证据与当前边界 |
 | --- | --- |
 | Qwen3、PyTorch、LoRA | 真实训练 Qwen3-1.7B LoRA，记录训练配置与基础模型对照；最新候选尚未通过开发质量门槛。 |
 | IM 对话与工程 | 自有网页、FastAPI、SQLite、SSE 流式回答、角色卡和会话管理；单用户原型。 |
