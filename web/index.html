@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#101114" />
+    <meta name="description" content="拾语，遇见一个角色，开启属于你的对话。" />
+    <title>拾语 · 你的故事，从这里开始</title>
+    <link rel="icon" href="/ui/assets/icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/ui/assets/manifest.webmanifest" />
+    <link rel="stylesheet" href="/ui/assets/theme-v3.css?v=history-delete-voice-profile-20261025" />
+    <script src="/ui/assets/app.js?v=history-delete-voice-profile-20261025" type="module"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <a class="brand" href="/ui/"
+          ><img src="/ui/assets/icon.svg" width="38" height="38" alt="" /><span
+            >拾语<small>SHIYU</small></span
+          ></a
+        >
+        <div class="side-caption">你的故事，从这里开始</div>
+        <nav>
+          <button
+            class="nav-item active"
+            id="nav-discover"
+            aria-label="发现角色"
+            data-action="discover"
+          >
+            <span data-icon="compass"></span><span>发现角色</span
+            ><span class="nav-dot"></span>
+          </button>
+          <button
+            class="nav-item"
+            id="nav-history"
+            data-action="history"
+            aria-label="我的对话"
+          >
+            <span data-icon="chat"></span><span>我的对话</span>
+          </button>
+        </nav>
+        <div class="side-heading">
+          <span>最近聊过</span
+          ><button
+            class="icon-button"
+            id="refresh-history"
+            title="刷新历史"
+            aria-label="刷新历史"
+          >
+            <span data-icon="refresh"></span>
+          </button>
+        </div>
+        <div id="recent-sessions" class="recent-sessions">
+          <p class="side-empty">你的对话会留在这里</p>
+        </div>
+        <div class="sidebar-bottom">
+          <div class="local-card">
+            <span class="status-dot" id="connection-dot"></span>
+            <div>
+              <strong id="connection-label">连接本机服务中</strong
+              ><small>聊天记录保存在这台电脑</small>
+            </div>
+          </div>
+          <button class="nav-item" data-action="settings" aria-label="应用设置">
+            <span data-icon="settings"></span><span>应用设置</span>
+          </button>
+          <div class="profile">
+            <span class="user-avatar">我</span
+            ><span>本地使用者<small>无需账号 · 即刻开始</small></span
+            ><span class="version">v0.3</span>
+          </div>
+        </div>
+      </aside>
+      <main class="main-area">
+        <header class="topbar">
+          <div class="breadcrumb" id="breadcrumb">
+            发现 <span>/</span> 适合此刻的对话
+          </div>
+          <div class="top-actions">
+            <span class="local-badge"
+              ><span class="status-dot"></span>本地 AI</span
+            ><button
+              class="icon-button"
+              data-action="settings"
+              aria-label="打开应用设置"
+            >
+              <span data-icon="sliders"></span>
+            </button>
+          </div>
+        </header>
+        <section id="discover-view" class="view discover-view">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">A WORLD OF CONVERSATIONS</div>
+              <h1>遇见一个人，开启一段对话<span>。</span></h1>
+              <p>
+                分享日常，交换灵感，或者只是聊聊此刻。总有一种陪伴，刚好适合你。
+              </p>
+            </div>
+            <button class="create-character-button" id="create-character">＋ 创建角色</button>
+          </div>
+          <div class="discovery-controls">
+            <label class="role-search"
+              ><span data-icon="search"></span
+              ><input
+                id="discover-search"
+                placeholder="搜索角色、性格或你想聊的话题"
+                aria-label="搜索角色"
+            /></label>
+            <div class="category-tabs" aria-label="角色分类">
+              <button class="category active" data-filter="all">为你发现</button
+              ><button class="category" data-filter="companion">日常陪伴</button
+              ><button class="category" data-filter="study">学习成长</button
+              ><button class="category" data-filter="interview">
+                面试练习
+              </button>
+            </div>
+          </div>
+          <div class="section-title">
+            <h2>此刻，想和谁聊聊？</h2>
+            <span class="muted" id="character-count">2位原创角色</span>
+          </div>
+          <div id="character-grid" class="character-grid"></div>
+          <div id="no-characters" class="empty-state" hidden>
+            没有找到匹配角色，试试其他关键词。
+          </div>
+          <div class="page-note">
+            角色由AI扮演 · 对话保存在本机 · 从此刻开始，自在聊天
+          </div>
+        </section>
+        <section id="history-view" class="view" hidden>
+          <div class="page-heading compact">
+            <div>
+              <div class="eyebrow">YOUR CONVERSATIONS</div>
+              <h1>每一段对话，都在这里。</h1>
+              <p>接着上次的话题，或者开启新的故事。</p>
+            </div>
+          </div>
+          <label class="search-box"
+            ><span data-icon="search"></span
+            ><input
+              id="history-search"
+              maxlength="200"
+              placeholder="搜索全部对话中的消息内容"
+              aria-label="搜索历史对话"
+          /></label>
+          <div id="history-list" class="history-list"></div>
+          <p id="history-status" role="status" aria-live="polite"></p>
+          <button id="history-more" class="text-button" hidden>
+            加载更早的对话
+          </button>
+        </section>
+        <section id="chat-view" class="chat-view" hidden>
+          <div class="chat-heading">
+            <div id="chat-avatar" class="avatar"></div>
+            <div>
+              <h1 id="chat-name">千问</h1>
+              <p id="chat-tag">AI 聊天助手</p>
+            </div>
+            <div class="chat-heading-actions">
+              <button class="text-button" id="edit-character-card" hidden>编辑角色卡</button>
+              <button
+                class="icon-button"
+                id="toggle-profile"
+                aria-label="查看角色资料"
+              >
+                <span data-icon="profile"></span>
+              </button>
+              <button class="text-button" id="new-role-chat">
+                <span data-icon="plus"></span>新对话</button
+              ><button
+                class="icon-button"
+                id="export-chat"
+                title="导出当前对话"
+                aria-label="导出当前对话"
+              >
+                <span data-icon="download"></span>
+              </button>
+            </div>
+          </div>
+          <div
+            id="messages"
+            class="messages"
+            aria-label="聊天内容"
+            aria-live="polite"
+          ></div>
+          <div class="composer-area">
+            <div id="chat-status" class="chat-status" role="status"></div>
+            <div class="composer">
+              <textarea
+                id="draft"
+                rows="2"
+                maxlength="4096"
+                placeholder="说点什么吧…"
+                aria-label="你的消息"
+              ></textarea>
+              <div class="composer-tools">
+                <div>
+                  <button
+                    class="icon-button"
+                    id="open-voice"
+                    aria-label="语音输入"
+                    title="语音输入"
+                  >
+                    <span data-icon="mic"></span></button
+                  ><span class="composer-hint"
+                    >Enter 发送 · Shift + Enter 换行</span
+                  >
+                </div>
+                <div class="send-actions">
+                  <button class="text-button" id="retry-message" hidden>
+                    重试</button
+                  ><button
+                    class="send-button"
+                    id="send-message"
+                    aria-label="发送消息"
+                  >
+                    <span>发送</span><span data-icon="arrow"></span></button
+                  ><button class="stop-button" id="stop-message" hidden>
+                    <span class="stop-square"></span>停止
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="composer-note">
+              AI 的回答可能不准确 · <span id="model-caption">本地模型</span>
+            </div>
+            <audio id="speech-player" controls hidden></audio>
+          </div>
+          <aside
+            id="character-panel"
+            class="character-panel"
+            aria-label="角色资料"
+          ></aside>
+        </section>
+      </main>
+    </div>
+    <dialog id="settings-dialog" class="dialog settings-dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">MAKE IT YOURS</span>
+          <h2>应用设置</h2>
+        </div>
+        <button
+          class="icon-button"
+          data-close="settings-dialog"
+          aria-label="关闭设置"
+        >
+          <span data-icon="close"></span>
+        </button>
+      </div>
+      <label class="setting-row"
+        ><span
+          ><strong>回答长度</strong
+          ><small>越长可能等待越久，达到上限仍会截断</small></span
+        ><select id="answer-length">
+          <option value="256">简短 · 256 token</option>
+          <option value="512" selected>标准 · 512 token</option>
+          <option value="1024">详细 · 1024 token</option>
+        </select></label
+      ><label class="setting-row"
+        ><span
+          ><strong>新对话使用的模型</strong
+          ><small>只影响之后创建的会话</small></span
+        ><select id="model-mode">
+          <option value="base">原始模型 Base</option>
+        </select></label
+      >
+      <div class="info-panel">
+        <strong>运行在你的电脑上</strong>
+        <p id="model-info">正在读取模型信息…</p>
+        <p id="voice-info"></p>
+        <p>
+          LoRA 是基于 LCCC-base 的本地实验版，本轮使用 1,306 条训练回复目标。
+          原始语料是人类之间的聊天，不是虚拟角色对话；是否更自然仍待盲评。角色差异来自提示设定，不是各角色分别训练的模型。
+        </p>
+        <p>
+          超过上下文预算时，模型输入只保留最近的完整轮次，完整聊天仍保存在本机。当前尚未自动生成摘要；小满的旧轮次回忆是单独的实验开关，不等同于所有角色都具备长期记忆。
+        </p>
+      </div>
+      <div class="settings-links">
+        <a href="http://127.0.0.1:7860/" target="_blank" rel="noopener"
+          >实验工作台 ↗</a
+        ><a href="/docs" target="_blank" rel="noopener">接口文档 ↗</a
+        ><button class="text-button" id="configure-current-voice">配置当前角色音色</button>
+        <button class="text-button" id="install-app">添加到桌面</button>
+      </div>
+      <p class="muted small">
+        本地应用原型 · 非甜气官方产品 · 录音与上传可能保留本机缓存
+      </p>
+      <p class="muted small">
+        本软件按 GNU AGPL-3.0 授权提供，无任何明示或默示担保；你可依许可复制、修改和分发。<a href="/license" target="_blank" rel="noopener">查看许可证</a>
+      </p>
+    </dialog>
+    <dialog id="character-editor-dialog" class="dialog character-editor-dialog">
+      <div class="dialog-heading">
+        <div><span class="eyebrow">LOCAL CHARACTER STUDIO</span><h2>创建一位新角色</h2></div>
+        <button class="icon-button" data-close="character-editor-dialog" aria-label="关闭"><span data-icon="close"></span></button>
+      </div>
+      <p class="muted">写几个关键词或一段背景，拾语会调用本机 Qwen 生成可编辑草稿。只有点击保存后才会成为角色卡。</p>
+      <label class="editor-field"><strong>角色灵感</strong><textarea id="character-inspiration" rows="3" maxlength="1800" placeholder="例如：雨夜电台主持人；住在海边小城；说话慢一些，喜欢收集听众寄来的明信片"></textarea></label>
+      <div class="editor-actions"><span id="character-generation-status" role="status"></span><button id="generate-character" class="dark-button">用本地模型生成草稿</button></div>
+      <section id="character-draft-fields" class="character-draft-fields" hidden>
+        <div class="draft-notice" id="character-draft-notice"></div>
+        <label class="editor-field"><strong>名字</strong><input id="card-name" maxlength="40"></label>
+        <label class="editor-field"><strong>一句话介绍</strong><input id="card-tagline" maxlength="100"></label>
+        <label class="editor-field"><strong>角色简介</strong><textarea id="card-description" rows="2" maxlength="500"></textarea></label>
+        <label class="editor-field"><strong>背景草稿</strong><textarea id="card-background" rows="3" maxlength="1200"></textarea></label>
+        <div class="editor-two-columns">
+          <label class="editor-field"><strong>性格</strong><textarea id="card-personality" rows="2" maxlength="500"></textarea></label>
+          <label class="editor-field"><strong>说话方式</strong><textarea id="card-speech-style" rows="2" maxlength="500"></textarea></label>
+        </div>
+        <label class="editor-field"><strong>与用户的关系</strong><textarea id="card-relationship" rows="2" maxlength="400"></textarea></label>
+        <label class="editor-field"><strong>开场白</strong><textarea id="card-greeting" rows="2" maxlength="300"></textarea></label>
+        <label class="editor-field"><strong>示例对话</strong><textarea id="card-examples" rows="4" placeholder="每行一组：用户说的话｜角色自然、完整的回复"></textarea><small>示例只教模型对话节奏，不代表角色已经经历过这些事。</small></label>
+        <label class="editor-field"><strong>固定设定</strong><textarea id="card-facts" rows="4" placeholder="每行一条：待确认｜年龄｜22岁；或：确认｜职业｜海边电台主持人"></textarea><small>生成内容默认待确认。你核对后可把确实想固定的条目标为“确认”。</small></label>
+        <label class="editor-field"><strong>世界书（按需注入）</strong><textarea id="card-worldbook" rows="5" placeholder="每行一条：关键词1,关键词2｜标题｜内容"></textarea><small>用户消息命中关键词时才加入本轮提示词，不会每次把整本资料塞给模型。</small></label>
+        <label class="editor-field"><strong>互动边界</strong><textarea id="card-boundaries" rows="2" maxlength="800"></textarea></label>
+        <div class="editor-actions"><span>先检查模型补充的内容，再保存。</span><button id="save-character" class="dark-button">保存角色卡</button></div>
+      </section>
+    </dialog>
+    <dialog id="voice-dialog" class="dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">SAY IT YOUR WAY</span>
+          <h2>把声音变成文字</h2>
+        </div>
+        <button
+          class="icon-button"
+          data-close="voice-dialog"
+          aria-label="关闭语音输入"
+        >
+          <span data-icon="close"></span>
+        </button>
+      </div>
+      <p class="muted">最长30秒、8MiB。识别后先检查文字，再点击发送。</p>
+      <div class="record-area">
+        <button id="record-audio" class="record-button" aria-label="开始录音">
+          <span data-icon="mic"></span></button
+        ><strong id="record-label">点击开始录音</strong
+        ><span class="muted" id="record-time">00:00 / 00:30</span>
+      </div>
+      <label class="upload-audio"
+        ><span data-icon="upload"></span
+        ><span id="audio-file-label">或选择本机音频，推荐 PCM WAV</span
+        ><input
+          type="file"
+          id="audio-file"
+          accept="audio/*,.wav,.webm,.m4a"
+          hidden
+      /></label>
+      <p id="voice-status" class="voice-status" role="status">
+        识别可能漏字，请检查；麦克风权限由你决定。
+      </p>
+      <button id="transcribe-audio" class="dark-button full" disabled>
+        识别到输入框
+      </button>
+    </dialog>
+    <dialog id="clear-dialog" class="dialog">
+      <h2>清空这段对话？</h2>
+      <p>将删除当前会话的全部消息。新建对话可以保留这些记录。</p>
+      <div class="dialog-actions">
+        <button class="text-button" data-close="clear-dialog">保留记录</button
+        ><button class="danger-button" id="confirm-clear">清空消息</button>
+      </div>
+    </dialog>
+    <dialog id="delete-session-dialog" class="dialog">
+      <h2>删除这段对话？</h2>
+      <p>“<span id="delete-session-title"></span>”及其聊天消息会从本机数据库中永久删除。</p>
+      <div class="dialog-actions">
+        <button class="text-button" data-close="delete-session-dialog">取消</button>
+        <button class="danger-button" id="confirm-delete-session">删除对话</button>
+      </div>
+    </dialog>
+    <dialog id="voice-profile-dialog" class="dialog">
+      <div class="dialog-heading">
+        <div><span class="eyebrow">CHARACTER VOICE</span><h2 id="voice-profile-heading">角色音色档案</h2></div>
+        <button class="icon-button" data-close="voice-profile-dialog" aria-label="关闭"><span data-icon="close"></span></button>
+      </div>
+      <p class="muted">同一套 GPT-SoVITS 模型可以服务多个角色；每个角色使用自己的参考音频与逐字稿。请只使用本人录制或已获授权的清晰音频。首版仅接受 PCM WAV，最多 20 MiB。</p>
+      <label class="editor-field"><strong>音色档案名称</strong><input id="voice-profile-name" maxlength="80"></label>
+      <label class="editor-field"><strong>声音感觉</strong><input id="voice-profile-style" maxlength="300" placeholder="例如：温柔自然、语速适中"></label>
+      <label class="editor-field"><strong>参考音频逐字稿</strong><textarea id="voice-profile-text" rows="3" maxlength="1000" placeholder="必须与参考音频中的说话内容完全一致"></textarea></label>
+      <label class="editor-field"><strong>参考音频（PCM WAV）</strong><input id="voice-profile-audio" type="file" accept="audio/wav,.wav"></label>
+      <p id="voice-profile-status" role="status">保存声音描述后，选择参考音频并保存即可绑定给当前角色。</p>
+      <div class="dialog-actions"><button class="dark-button" id="save-voice-profile">保存音色档案</button></div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

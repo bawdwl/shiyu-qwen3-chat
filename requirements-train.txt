@@ -1,0 +1,2 @@
+-r requirements-inference.txt
+peft==0.21.2

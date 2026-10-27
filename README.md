@@ -45,4 +45,3 @@ python launch_app.py --model-profile qwen3-1.7b
 ## 许可
 
 项目代码按 [AGPL-3.0](LICENSE) 提供。Qwen、MNN、GPT-SoVITS、依赖库和训练数据遵循各自的上游许可证；本仓库不包含这些第三方项目的完整代码和模型。界面参考了 SillyTavern 的角色卡与世界书功能理念。
-
