@@ -8,6 +8,7 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import urlparse
 import httpx
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'src'))
 from runtime_models import get_profile
 
 def running_health():
@@ -103,7 +104,7 @@ def main():
         print('本机服务正在运行：'+str(existing.get('model_id'))+' '+url,flush=True)
         if not args.no_open: webbrowser.open(url)
         return
-    command=[sys.executable,'-u',str(root/'backend.py')]
+    command=[sys.executable,'-u',str(root/'src/backend.py')]
     profile=args.model_profile or ('qwen3-1.7b' if (root/'outputs/models/qwen3-1.7b/source.json').exists() else 'qwen3-0.6b')
     command+=['--model-profile',profile]
     speech_provider=args.speech_provider or 'profiles'

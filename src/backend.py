@@ -250,7 +250,7 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
         if app.state.lan_devices.pop(device_id,None) is None:
             raise HTTPException(404,'Device not found')
         return {'revoked':True,'device_id':device_id}
-    web_dir=Path(__file__).with_name('web')
+    web_dir=Path(__file__).resolve().parent.parent / 'web'
     if web_dir.is_dir():
         app.mount('/ui/assets',StaticFiles(directory=web_dir),name='app-assets')
 
@@ -262,7 +262,7 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
 
     @app.get('/license',include_in_schema=False)
     def project_license():
-        return FileResponse(Path(__file__).with_name('LICENSE'),media_type='text/plain',
+        return FileResponse(Path(__file__).resolve().parent.parent / 'LICENSE',media_type='text/plain',
                             filename='LICENSE-AGPL-3.0.txt')
 
     @app.get('/characters')

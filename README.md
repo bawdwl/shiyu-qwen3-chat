@@ -4,11 +4,11 @@
 
 ## 界面展示
 
-以下是开发过程中保存的电脑端截图，拍摄于较早版本；图中知夏已从当前默认角色中移除，现默认角色为小满和言川。
+以下是当前版本的实际运行截图，使用独立演示会话；截图为窄屏显示，聊天回答由本机 Qwen3-1.7B 生成。
 
-![拾语角色选择界面](docs/images/shiyu-v3-home.png)
+![拾语角色选择界面](docs/images/shiyu-current-home.png)
 
-![拾语角色聊天界面](docs/images/shiyu-v3-chat.png)
+![拾语角色聊天界面](docs/images/shiyu-current-chat.png)
 
 ## 与岗位要求的对应情况
 
@@ -39,8 +39,8 @@ conda create -n qwen3-im-chat python=3.11 pip
 conda activate qwen3-im-chat
 python -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
 python -m pip install -r requirements-lock-windows-py311.txt
-python fetch_chat_model.py
-python launch_app.py --model-profile qwen3-1.7b
+python src/fetch_chat_model.py
+python launch_app.py --model-profile qwen3-1.7b --speech-provider off
 ```
 
 访问 http://127.0.0.1:8000/ui/，接口文档为 http://127.0.0.1:8000/docs。语音模型和 GPT-SoVITS 需另外配置，不随仓库提供。安装版本与环境的兼容性仍需在新机器上复核。
@@ -61,9 +61,9 @@ python launch_app.py --model-profile qwen3-1.7b
 ## 代码目录
 
 - `web/`：网页界面和角色图片。
-- `backend.py`、`inference.py`、`storage.py`：接口、模型推理、SQLite 持久化。
-- `character_cards.py`、`role_knowledge.py`、`same_chat_memory.py`：角色卡、世界书和同会话记忆。
-- `train_lora.py`、`training_data.py`、`training_recipe.py`：LoRA 训练与数据处理。
+- `src/backend.py`、`src/inference.py`、`src/storage.py`：接口、模型推理、SQLite 持久化。
+- `src/character_cards.py`、`src/role_knowledge.py`、`src/same_chat_memory.py`：角色卡、世界书和同会话记忆。
+- `src/train_lora.py`、`src/training_data.py`、`src/training_recipe.py`：LoRA 训练与数据处理；`src/` 也包含依赖的历史处理模块。
 - `scripts/`：近期实验、MNN 转换等工具；`experiments/legacy/`：历史实验和检查脚本，路径整理后未逐一复验。
 - `docs/`：架构、API 和实验记录；`tests/`：项目测试。
 
@@ -72,4 +72,3 @@ python launch_app.py --model-profile qwen3-1.7b
 ## 许可
 
 项目代码按 [AGPL-3.0](LICENSE) 提供。Qwen、MNN、GPT-SoVITS、依赖库和训练数据遵循各自的上游许可证；本仓库不包含这些第三方项目的完整代码和模型。界面参考了 SillyTavern 的角色卡与世界书功能理念。
-

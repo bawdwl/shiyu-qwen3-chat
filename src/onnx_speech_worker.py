@@ -13,7 +13,7 @@ def main():
     parser.add_argument('--output', required=True)
     parser.add_argument('--model-dir', required=True)
     args = parser.parse_args()
-    dependencies = Path(__file__).resolve().parent / 'outputs/onnx-tts-runtime'
+    dependencies = Path(__file__).resolve().parent.parent / 'outputs/onnx-tts-runtime'
     if dependencies.is_dir():
         site.addsitedir(str(dependencies))
     import sherpa_onnx

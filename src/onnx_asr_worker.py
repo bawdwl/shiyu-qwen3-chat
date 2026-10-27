@@ -4,7 +4,7 @@ import site
 import sys
 import wave
 from pathlib import Path
-site.addsitedir(str(Path(__file__).resolve().parent/'outputs/onnx-tts-runtime'))
+site.addsitedir(str(Path(__file__).resolve().parent.parent/'outputs/onnx-tts-runtime'))
 import numpy as np
 import sherpa_onnx
 

@@ -17,7 +17,7 @@ def normalize_audio(content):
         validate_input(content)
         return content
     import site
-    site.addsitedir(str(Path(__file__).resolve().parent/'outputs/media-runtime'))
+    site.addsitedir(str(Path(__file__).resolve().parent.parent/'outputs/media-runtime'))
     import imageio_ffmpeg
     with tempfile.TemporaryDirectory() as folder:
         source=Path(folder)/'input.audio';dest=Path(folder)/'decoded.wav';source.write_bytes(content)

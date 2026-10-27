@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from runtime_models import get_profile
 from training_data import encode_sample, file_hash, read_records
 from training_recipe import LORA_MODULES
