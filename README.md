@@ -2,6 +2,24 @@
 
 面向 IM 大模型开发岗位的个人项目，将本地 Qwen3-1.7B、角色聊天网页、语音功能、LoRA 微调实验和 MNN 手机端推理结合在一个代码仓库中。项目仍在完善，下面区分实际完成与尚待验证的部分。
 
+## 界面展示
+
+以下是开发过程中保存的电脑端截图，拍摄于较早版本；图中知夏已从当前默认角色中移除，现默认角色为小满和言川。
+
+![拾语角色选择界面](docs/images/shiyu-v3-home.png)
+
+![拾语角色聊天界面](docs/images/shiyu-v3-chat.png)
+
+## 与岗位要求的对应情况
+
+| 岗位方向 | 项目证据与当前边界 |
+| --- | --- |
+| Qwen3、PyTorch、LoRA | 真实训练 Qwen3-1.7B LoRA，记录训练配置与基础模型对照；最新候选尚未通过开发质量门槛。 |
+| IM 对话与工程 | 自有网页、FastAPI、SQLite、SSE 流式回答、角色卡和会话管理；单用户原型。 |
+| MNN-Chat 与权重优化 | 自行转换基础模型为 MNN Q4，并通过上游 MNN Chat 在手机本地运行；不是自研手机 App。 |
+| 语音整合 | 电脑端接入识别与 GPT-SoVITS 朗读；手机语音由上游 MNN Chat 提供，延迟及准确率尚未系统测量。 |
+| vLLM、AutoGPTQ、Linux 与高并发 | 尚未完成；独立使用过 GPTQModel 量化，不等同于使用 AutoGPTQ。 |
+
 ## 已完成
 
 - **聊天应用**：自有网页、FastAPI、SQLite，多轮聊天、SSE 流式输出、会话管理、角色卡和关键词世界书。
@@ -40,8 +58,18 @@ python launch_app.py --model-profile qwen3-1.7b
 - [LoRA 训练记录](docs/首轮RoleLLM适配LoRA实验记录.md) · [开发对照结果](docs/完整角色提示控制实验结论.md)
 - 脚本 `scripts/export_qwen3_mnn_3_5_0.ps1` 记录转换入口；实际导出依赖另行配置的 MNN 工具与原始模型。
 
+## 代码目录
+
+- `web/`：网页界面和角色图片。
+- `backend.py`、`inference.py`、`storage.py`：接口、模型推理、SQLite 持久化。
+- `character_cards.py`、`role_knowledge.py`、`same_chat_memory.py`：角色卡、世界书和同会话记忆。
+- `train_lora.py`、`training_data.py`、`training_recipe.py`：LoRA 训练与数据处理。
+- `scripts/`：近期实验、MNN 转换等工具；`experiments/legacy/`：历史实验和检查脚本，路径整理后未逐一复验。
+- `docs/`：架构、API 和实验记录；`tests/`：项目测试。
+
 仓库不包含模型权重、Adapter、训练语料、个人录音、聊天数据库或本地环境。部分实验脚本需要另行准备未公开的数据；当前提供的是代码和实验结果摘要，不能宣称完整训练可立即复现。
 
 ## 许可
 
 项目代码按 [AGPL-3.0](LICENSE) 提供。Qwen、MNN、GPT-SoVITS、依赖库和训练数据遵循各自的上游许可证；本仓库不包含这些第三方项目的完整代码和模型。界面参考了 SillyTavern 的角色卡与世界书功能理念。
+
