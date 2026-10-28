@@ -63,6 +63,8 @@ python launch_app.py --model-profile qwen3-1.7b --speech-provider off --asr-prov
 
 上面的命令只启动文字聊天。GPT-SoVITS 功能已经在开发机接通，但新机器仍需另外安装官方 GPT-SoVITS、下载相应权重、准备独立运行环境和参考音频；这些文件不随本仓库提供。当前还没有经过验证的完整一键安装流程，**不能按上述命令直接获得语音功能**。
 
+详细步骤、CPU 配置与常见问题见 [Windows 语音部署](docs/语音部署.md)。
+
 在已经按本项目路径准备好 GPT-SoVITS 服务、CPU 配置和角色参考音频的开发环境中，可使用下面的命令启动按角色音色路由及本地 Whisper：
 
 ```powershell

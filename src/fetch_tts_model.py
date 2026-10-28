@@ -3,7 +3,7 @@ import hashlib
 import json
 import urllib.request
 from pathlib import Path
-from fetch_oasst2_source import fetch
+from download_utils import fetch
 
 REPO = 'csukuangfj/vits-melo-tts-zh_en'
 REVISION = 'a0d5c6a264c0ef92d70d8661d8cc502d79627cd6'

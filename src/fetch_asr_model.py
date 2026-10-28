@@ -3,7 +3,7 @@ import hashlib
 import json
 import urllib.request
 from pathlib import Path
-from fetch_oasst2_source import fetch
+from download_utils import fetch
 
 REPO='csukuangfj/sherpa-onnx-whisper-base'
 REVISION='bb53ee204431c90d314c1cc08d28d23e5b7927cc'
