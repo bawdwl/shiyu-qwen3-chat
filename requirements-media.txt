@@ -1,2 +1,0 @@
-# 安装到outputs/media-runtime；用于解码浏览器WebM录音，不更改系统PATH。
-imageio-ffmpeg==0.6.0

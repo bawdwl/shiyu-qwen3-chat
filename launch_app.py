@@ -96,6 +96,8 @@ def main():
     parser.add_argument('--same-chat-memory',action='store_true',
                         help='实验性开启小满同一聊天的裁剪后记忆检索；默认关闭')
     parser.add_argument('--speech-provider',choices=['onnx','gpt-sovits','profiles','off'])
+    parser.add_argument('--asr-provider',choices=['whisper','off'],default='off',
+                        help='语音识别需另行准备模型；文字聊天默认关闭')
     parser.add_argument('--tts-url',default='http://127.0.0.1:9881')
     args=parser.parse_args();root=Path(__file__).resolve().parent;url='http://127.0.0.1:8000/ui/'
     existing=running_health()
@@ -112,6 +114,7 @@ def main():
     if speech_provider in ('gpt-sovits','profiles'):
         tts_process=start_gpt_sovits(root,args.tts_url)
     command+=['--speech-provider',speech_provider]
+    command+=['--asr-provider',args.asr_provider]
     if speech_provider in ('gpt-sovits','profiles'):
         command+=['--tts-url',args.tts_url]
     if args.same_chat_memory: command.append('--same-chat-memory')

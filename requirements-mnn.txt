@@ -1,2 +1,0 @@
-# Optional Windows CPU smoke experiment; install into outputs/mnn-runtime.
-MNN==3.6.1
