@@ -12,7 +12,7 @@
     <link rel="icon" href="/ui/assets/icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/ui/assets/manifest.webmanifest" />
     <link rel="stylesheet" href="/ui/assets/theme-v3.css?v=history-delete-voice-profile-20261025" />
-    <script src="/ui/assets/app.js?v=history-delete-voice-profile-20261025" type="module"></script>
+    <script src="/ui/assets/app.js?v=role-continuity-20261027-v2" type="module"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -161,6 +161,7 @@
               <p id="chat-tag">AI 聊天助手</p>
             </div>
             <div class="chat-heading-actions">
+              <button class="text-button" id="open-session-memory">会话记忆</button>
               <button class="text-button" id="edit-character-card" hidden>编辑角色卡</button>
               <button
                 class="icon-button"
@@ -315,9 +316,13 @@
         </div>
         <label class="editor-field"><strong>与用户的关系</strong><textarea id="card-relationship" rows="2" maxlength="400"></textarea></label>
         <label class="editor-field"><strong>开场白</strong><textarea id="card-greeting" rows="2" maxlength="300"></textarea></label>
-        <label class="editor-field"><strong>示例对话</strong><textarea id="card-examples" rows="4" placeholder="每行一组：用户说的话｜角色自然、完整的回复"></textarea><small>示例只教模型对话节奏，不代表角色已经经历过这些事。</small></label>
+        <label class="editor-field"><strong>开场情境</strong><textarea id="card-scenario" rows="2" maxlength="600"></textarea></label>
+        <label class="editor-field"><strong>人物目标与顾虑</strong><textarea id="card-motivation" rows="2" maxlength="400"></textarea></label>
+        <details><summary>这个角色的回答参数</summary><label class="editor-field"><strong>采样预设（JSON，可留空）</strong><textarea id="card-preset" rows="2" placeholder='{"temperature":0.7,"top_p":0.8,"top_k":20}'></textarea><small>只影响表达的随机性，不代表角色性格或回答质量。</small></label></details>
+        <label class="editor-field"><strong>示例对话</strong><textarea id="card-examples" rows="4" placeholder="每行一组：用户说的话｜角色自然、完整的回复"></textarea><small>示例供编辑参考；可选择仅在新对话开场使用，避免每轮照搬。</small></label>
+        <label class="setting-row"><span>新对话开场时参考示例</span><input id="card-use-examples" type="checkbox"></label>
         <label class="editor-field"><strong>固定设定</strong><textarea id="card-facts" rows="4" placeholder="每行一条：待确认｜年龄｜22岁；或：确认｜职业｜海边电台主持人"></textarea><small>生成内容默认待确认。你核对后可把确实想固定的条目标为“确认”。</small></label>
-        <label class="editor-field"><strong>世界书（按需注入）</strong><textarea id="card-worldbook" rows="5" placeholder="每行一条：关键词1,关键词2｜标题｜内容"></textarea><small>用户消息命中关键词时才加入本轮提示词，不会每次把整本资料塞给模型。</small></label>
+        <label class="editor-field"><strong>世界书（按需注入）</strong><textarea id="card-worldbook" rows="5" placeholder="每行：启用｜0｜关键词1,关键词2｜标题｜内容"></textarea><small>每行依次为启用/禁用、优先级（-100至100）、关键词、标题和内容；也兼容旧的三栏格式。扫描当前输入和近期消息，最多加入4条。</small></label>
         <label class="editor-field"><strong>互动边界</strong><textarea id="card-boundaries" rows="2" maxlength="800"></textarea></label>
         <div class="editor-actions"><span>先检查模型补充的内容，再保存。</span><button id="save-character" class="dark-button">保存角色卡</button></div>
       </section>
@@ -389,5 +394,16 @@
       <div class="dialog-actions"><button class="dark-button" id="save-voice-profile">保存音色档案</button></div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="session-memory-dialog" class="dialog settings-dialog">
+      <div class="dialog-heading"><h2>这段对话的记忆</h2><button class="icon-button" data-close="session-memory-dialog" aria-label="关闭记忆"><span data-icon="close"></span></button></div>
+      <p class="muted">仅用于当前会话，新对话从头开始。保留最近原文，并定期从较早消息中挑选有来源的原话摘要；摘要可能遗漏，请随时修正。</p>
+      <label class="setting-row"><span>自动整理早期消息</span><input type="checkbox" id="memory-auto"></label>
+      <p class="muted">取消勾选并保存后，对应消息不会再作为早期记忆召回；可恢复上一版。</p>
+      <div id="memory-quotes" style="white-space:pre-wrap;max-height:240px;overflow:auto"></div>
+      <label class="editor-field"><strong>你的补充或更正</strong><textarea id="memory-notes" rows="4" maxlength="1200" placeholder="例如：前面约定已改为周日下午。只影响这段对话。"></textarea></label>
+      <p id="memory-status" role="status"></p>
+      <div class="dialog-actions"><button class="text-button" id="memory-refresh">整理一批旧消息</button><button class="text-button" id="memory-restore">恢复上一版</button><button class="dark-button" id="memory-save">保存修订</button></div>
+      <details><summary>查看下一轮上下文</summary><p class="muted">按当前输入框内容预览。发送时若新增摘要，内容可能变化。</p><button class="text-button" id="prompt-preview">刷新预览</button><pre id="prompt-preview-text" style="white-space:pre-wrap;max-height:300px;overflow:auto"></pre></details>
+    </dialog>
   </body>
 </html>

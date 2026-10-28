@@ -35,6 +35,13 @@ class ChatStore:
                     voice_style TEXT NOT NULL, reference_text TEXT NOT NULL DEFAULT '',
                     reference_audio_path TEXT, language TEXT NOT NULL DEFAULT 'zh',
                     updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS session_memories(
+                    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                    payload TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1);
+                CREATE TABLE IF NOT EXISTS session_memory_versions(
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    revision INTEGER NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY(session_id,revision));
             ''')
             columns={r['name'] for r in db.execute('PRAGMA table_info(sessions)')}
             if 'character_id' not in columns:
@@ -112,6 +119,8 @@ class ChatStore:
             if db.execute('SELECT id FROM sessions WHERE id=?',(sid,)).fetchone() is None:
                 raise KeyError(sid)
             db.execute('DELETE FROM messages WHERE session_id=?',(sid,))
+            db.execute('DELETE FROM session_memories WHERE session_id=?',(sid,))
+            db.execute('DELETE FROM session_memory_versions WHERE session_id=?',(sid,))
             db.execute('UPDATE sessions SET updated_at=? WHERE id=?',(now(),sid))
 
     def delete_session(self,sid):
@@ -119,6 +128,43 @@ class ChatStore:
             cursor=db.execute('DELETE FROM sessions WHERE id=?',(sid,))
             if cursor.rowcount == 0:
                 raise KeyError(sid)
+
+    def get_memory(self,sid):
+        with self.connect() as db:
+            if db.execute('SELECT id FROM sessions WHERE id=?',(sid,)).fetchone() is None:
+                raise KeyError(sid)
+            row=db.execute('SELECT payload,revision FROM session_memories WHERE session_id=?',(sid,)).fetchone()
+            result=json.loads(row['payload']) if row else dict(items=[],covered_message_id=0,notes='',auto_enabled=True)
+            result['revision']=row['revision'] if row else 0
+            return result
+
+    def save_memory(self,sid,payload,expected_revision=None):
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT id FROM sessions WHERE id=?',(sid,)).fetchone() is None:
+                raise KeyError(sid)
+            row=db.execute('SELECT payload,revision FROM session_memories WHERE session_id=?',(sid,)).fetchone()
+            revision=row['revision'] if row else 0
+            if expected_revision is not None and revision!=expected_revision:
+                raise ValueError('记忆已更新，请重新打开后再保存。')
+            previous=json.loads(row['payload']) if row else {}
+            result={**dict(items=[],covered_message_id=0,notes='',auto_enabled=True),**previous,**payload}
+            result.pop('revision',None)
+            encoded=json.dumps(result,ensure_ascii=False)
+            if row:
+                db.execute('INSERT OR REPLACE INTO session_memory_versions VALUES(?,?,?)',(sid,revision,row['payload']))
+            db.execute('INSERT INTO session_memories VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET payload=excluded.payload,revision=excluded.revision',
+                       (sid,encoded,revision+1))
+            db.execute('DELETE FROM session_memory_versions WHERE session_id=? AND revision<?',(sid,max(0,revision-9)))
+        return {**result,'revision':revision+1}
+
+    def restore_memory(self,sid):
+        current=self.get_memory(sid)
+        with self.connect() as db:
+            row=db.execute('SELECT payload FROM session_memory_versions WHERE session_id=? ORDER BY revision DESC LIMIT 1',(sid,)).fetchone()
+        if row is None:
+            raise ValueError('没有可恢复的旧摘要。')
+        return self.save_memory(sid,json.loads(row['payload']),expected_revision=current['revision'])
 
     def get_voice_profile(self,character_id):
         with self.connect() as db:

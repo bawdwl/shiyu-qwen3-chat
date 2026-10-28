@@ -22,7 +22,7 @@
 
 ## 已完成
 
-- **聊天应用**：自有网页、FastAPI、SQLite，多轮聊天、SSE 流式输出、会话管理、角色卡和关键词世界书。
+- **聊天应用**：自有网页、FastAPI、SQLite，多轮聊天、SSE 流式输出、会话管理、角色卡和关键词世界书；支持生成和编辑角色档案、查看提示，以及同会话记忆整理和编辑。
 - **语音**：电脑端提供语音识别和回答朗读，并接入 GPT-SoVITS 角色音色；作者提供的参考音频未公开。合成延迟尚未系统优化。
 - **LoRA 实验**：在 RTX 4060 Laptop 8GB 上实际训练 Qwen3-1.7B 适配器，参考 RoleLLM 的角色条件化思路，以 PEFT 和项目训练循环实现。最近一轮开发对照未通过质量门槛，未证明整体质量提升；完整结果见 [实验记录](docs/完整角色提示控制实验结论.md)。
 - **MNN 端侧**：从官方 Qwen3-1.7B 权重自行导出 MNN 4-bit 模型，用上游 MNN Chat 在一加 Ace 5 手机本地运行；作者确认文字、语音识别和语音回答可用。
@@ -55,6 +55,7 @@ python launch_app.py --model-profile qwen3-1.7b --speech-provider off
 ```
 
 - [架构说明](docs/architecture.md) · [API 说明](docs/api-guide.md)
+- [角色卡、世界书与会话记忆](docs/角色卡与会话记忆.md)
 - [LoRA 训练记录](docs/首轮RoleLLM适配LoRA实验记录.md) · [开发对照结果](docs/完整角色提示控制实验结论.md)
 - 脚本 `scripts/export_qwen3_mnn_3_5_0.ps1` 记录转换入口；实际导出依赖另行配置的 MNN 工具与原始模型。
 
@@ -62,12 +63,15 @@ python launch_app.py --model-profile qwen3-1.7b --speech-provider off
 
 - `web/`：网页界面和角色图片。
 - `src/backend.py`、`src/inference.py`、`src/storage.py`：接口、模型推理、SQLite 持久化。
-- `src/character_cards.py`、`src/role_knowledge.py`、`src/same_chat_memory.py`：角色卡、世界书和同会话记忆。
+- `src/character_cards.py`、`src/prompt_pipeline.py`、`src/session_memory.py`：角色卡、提示组装与同会话记忆。
 - `src/train_lora.py`、`src/training_data.py`、`src/training_recipe.py`：LoRA 训练与数据处理；`src/` 也包含依赖的历史处理模块。
 - `scripts/`：近期实验、MNN 转换等工具；`experiments/legacy/`：历史实验和检查脚本，路径整理后未逐一复验。
 - `docs/`：架构、API 和实验记录；`tests/`：项目测试。
 
 仓库不包含模型权重、Adapter、训练语料、个人录音、聊天数据库或本地环境。部分实验脚本需要另行准备未公开的数据；当前提供的是代码和实验结果摘要，不能宣称完整训练可立即复现。
+
+
+同会话记忆由模型从旧消息中挑选原文片段，并可查看、编辑和恢复；它可能遗漏重要信息，不能保证长对话完全一致。新会话不继承旧会话的动态记忆。重复回复处理仅影响发送给模型的上下文，不删除数据库原记录。
 
 ## 许可
 

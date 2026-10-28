@@ -28,7 +28,9 @@ from stream_job import StreamJob,encode_sse
 from characters import (CHARACTERS,DEFAULT_CHARACTER_IDS,ai_identity_reply,catalogue,character_profile_reply,conversation_messages,
                         is_explicit_ai_identity_question)
 from character_cards import (build_generation_messages,card_to_runtime,normalize_card,
-                             parse_generated_card,retrieve_worldbook)
+                             parse_generated_card,retrieve_worldbook,build_enrichment_messages,apply_enrichment)
+from prompt_pipeline import assemble_prompt
+from session_memory import refresh_memory
 
 logger=logging.getLogger(__name__)
 
@@ -54,6 +56,21 @@ class CharacterIdeaRequest(BaseModel):
 class CharacterCardRequest(BaseModel):
     model_config=ConfigDict(extra='forbid')
     card: dict
+
+
+class MemoryEditRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    notes: str=Field(default='',strict=True,max_length=1200)
+    auto_enabled: bool=Field(default=True,strict=True)
+    revision: int=Field(strict=True,ge=0)
+    kept_items: list[int] | None=Field(default=None,max_length=12)
+
+    @field_validator('kept_items')
+    @classmethod
+    def valid_memory_indices(cls,value):
+        if value is not None and (any(type(i) is not int or i<0 for i in value) or len(set(value))!=len(value)):
+            raise ValueError('记忆条目索引无效')
+        return value
 
 
 class VoiceProfileRequest(BaseModel):
@@ -136,7 +153,7 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
         def engine_factory():
             from inference import QwenChat
             return QwenChat(adapter_run=adapter_run,trim_history=True,model_profile=model_profile,
-                            same_chat_memory=same_chat_memory)
+                            same_chat_memory=same_chat_memory,input_budget=4096)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -280,6 +297,31 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
         rows.update({card['id']:card_to_runtime(card) for card in app.state.store.list_character_cards()})
         return rows
 
+    def prepare_chat(current,question,registry,stop=None):
+        memory=app.state.store.get_memory(current['id'])
+        warning=None
+        try:
+            draft,_=assemble_prompt(current,question,registry,memory)
+            tokenizer=getattr(app.state.engine,'tokenizer',None)
+            budget=getattr(app.state.engine,'input_budget',4096)
+            should_refresh=False
+            if tokenizer:
+                encoded=tokenizer.apply_chat_template(draft,tokenize=True,add_generation_prompt=True,
+                                                      enable_thinking=False,return_dict=True,return_tensors='pt')
+                should_refresh=encoded['input_ids'].shape[-1] >= int(budget*0.75)
+            if should_refresh:
+                memory=refresh_memory(app.state.store,current,app.state.engine,stop)
+        except ValueError as exc:
+            warning=str(exc)
+        except Exception:
+            if stop is not None and stop.is_set():
+                raise
+            logger.exception('会话摘要失败，继续使用原始历史')
+            warning='摘要暂未更新，继续使用原始历史。'
+        messages,trace=assemble_prompt(current,question,registry,memory)
+        trace['memory_warning']=warning
+        return messages,trace
+
     @app.post('/characters/generate')
     def generate_character(body:CharacterIdeaRequest):
         engine=require_engine()
@@ -288,6 +330,12 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
         try:
             generated,_=engine.reply(build_generation_messages(body.inspiration),model_mode='base',max_new_tokens=900)
             card=parse_generated_card(generated,body.inspiration)
+            try:
+                enrichment,_=engine.reply(build_enrichment_messages(card),model_mode='base',max_new_tokens=1000)
+                card=apply_enrichment(card,enrichment)
+            except (ValueError,TypeError) as exc:
+                card['draft_notice']+=' 人物补充未通过格式检查，已保留第一步草稿，请手动补充。'
+                logger.warning('角色补充失败：%s',exc)
             return {'card':card,'notice':card['draft_notice']}
         except ValueError as exc:
             raise HTTPException(422,str(exc)) from exc
@@ -599,6 +647,72 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
             app.state.store.delete_session(str(session_id))
             return {'deleted':True,'id':str(session_id)}
 
+    @app.get('/sessions/{session_id}/memory')
+    def get_session_memory(session_id:UUID):
+        session(session_id)
+        return app.state.store.get_memory(str(session_id))
+
+    @app.put('/sessions/{session_id}/memory')
+    def edit_session_memory(session_id:UUID,body:MemoryEditRequest):
+        with exclusive():
+            session(session_id)
+            try:
+                updates=dict(notes=body.notes,auto_enabled=body.auto_enabled)
+                if body.kept_items is not None:
+                    current=app.state.store.get_memory(str(session_id))
+                    if current['revision']!=body.revision:
+                        raise ValueError('记忆已更新，请重新打开后再保存。')
+                    items=current.get('items',[])
+                    if any(i>=len(items) for i in body.kept_items):
+                        raise ValueError('记忆条目已变化，请重新打开。')
+                    updates['items']=[items[i] for i in body.kept_items]
+                    retained={item['message_id'] for item in updates['items']}
+                    removed={item['message_id'] for item in items} - retained
+                    excluded=set(current.get('excluded_message_ids',[])) | removed
+                    updates['excluded_message_ids']=sorted(excluded)
+                return app.state.store.save_memory(str(session_id),updates,body.revision)
+            except ValueError as exc:
+                raise HTTPException(409,str(exc)) from exc
+
+    @app.post('/sessions/{session_id}/memory/refresh')
+    def refresh_session_memory(session_id:UUID):
+        engine=require_engine()
+        with exclusive():
+            current=session(session_id)
+            try:
+                return refresh_memory(app.state.store,current,engine,force=True)
+            except ValueError as exc:
+                raise HTTPException(422,str(exc)) from exc
+
+    @app.post('/sessions/{session_id}/memory/restore')
+    def restore_session_memory(session_id:UUID):
+        with exclusive():
+            session(session_id)
+            try:
+                return app.state.store.restore_memory(str(session_id))
+            except ValueError as exc:
+                raise HTTPException(422,str(exc)) from exc
+
+    @app.get('/sessions/{session_id}/prompt')
+    def inspect_prompt(session_id:UUID,message:str=Query(default='继续聊聊',max_length=4096)):
+        current=session(session_id)
+        memory=app.state.store.get_memory(str(session_id))
+        messages,trace=assemble_prompt(current,message,runtime_characters(),memory)
+        tokenizer=getattr(app.state.engine,'tokenizer',None)
+        trace['input_budget']=getattr(app.state.engine,'input_budget',4096)
+        trace['messages']=messages
+        trace['input_tokens']=None
+        if tokenizer:
+            from context_window import prepare_context_details
+            try:
+                inputs,metrics,selected,_=prepare_context_details(tokenizer,messages,budget=trace['input_budget'],trim_history=True)
+                trace.update(metrics)
+                trace['messages']=selected
+                trace['input_tokens']=int(inputs['input_ids'].shape[-1])
+            except ValueError as exc:
+                trace['warning']=str(exc)
+        return trace
+
     @app.post('/chat')
     def chat(body:ChatRequest):
         engine=require_engine()
@@ -607,13 +721,6 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
             check_session_model(current,engine)
             check_session_character(current)
             registry=runtime_characters()
-            messages=conversation_messages(current,body.message,registry)
-            card=registry[current['character_id']].get('custom_card')
-            if card:
-                entries=retrieve_worldbook(card,body.message)
-                if entries:
-                    details='\n'.join(f"- {entry['title']}：{entry['content']}" for entry in entries)
-                    messages[0]['content'] += '\n\n【本轮命中的世界书条目】\n' + details
             try:
                 profile_reply=character_profile_reply(current['character_id'],body.message,registry)
                 if is_explicit_ai_identity_question(body.message):
@@ -623,7 +730,12 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
                     answer=profile_reply
                     metrics=dict(seconds=0.0,output_tokens=0,response_source='persona_policy')
                 else:
-                    answer,metrics=engine.reply(messages,model_mode=current['model_mode'],max_new_tokens=body.max_new_tokens)
+                    messages,trace=prepare_chat(current,body.message,registry)
+                    options={'generation_overrides':trace['generation_preset']} if trace['generation_preset'] else {}
+                    answer,metrics=engine.reply(messages,model_mode=current['model_mode'],max_new_tokens=body.max_new_tokens,**options)
+                    metrics['memory_warning']=trace['memory_warning']
+                    if metrics.get('context_omitted_turns'):
+                        metrics['memory_warning']='本轮仍有部分旧对话超过上下文预算，可在会话记忆中继续整理。'
                 if not isinstance(answer,str) or not answer.strip():
                     raise RuntimeError('模型返回空回答')
             except ValueError as exc:
@@ -691,18 +803,11 @@ def create_app(db_path='outputs/chat.sqlite3',adapter_run=None,engine_factory=No
             explicit_identity=is_explicit_ai_identity_question(body.message)
             policy_source='identity_policy' if explicit_identity else 'persona_policy'
             registry=runtime_characters()
-            additions=[]
             policy_reply=(ai_identity_reply(current['character_id'],registry) if explicit_identity
                           else character_profile_reply(current['character_id'],body.message,registry))
-            if not explicit_identity and current['character_id'] in registry:
-                card=registry[current['character_id']].get('custom_card')
-                entries=retrieve_worldbook(card,body.message) if card else []
-                if entries:
-                    details='\n'.join(f"- {entry['title']}：{entry['content']}" for entry in entries)
-                    additions.append('【本轮命中的世界书条目】\n' + details)
             job=StreamJob(engine,app.state.store,current,body.message,app.state.gate,body.timeout_seconds,
                           body.max_new_tokens,policy_reply=policy_reply,response_source=policy_source,
-                          characters=registry,prompt_additions=additions)
+                          characters=registry,prompt_builder=lambda stop:prepare_chat(current,body.message,registry,stop))
             app.state.job=job
             job.start()
         except Exception:

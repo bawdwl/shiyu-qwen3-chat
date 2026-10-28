@@ -12,10 +12,11 @@ class GenerationStopped(RuntimeError):
 
 class StreamJob:
     def __init__(self,engine,store,current,message,gate,timeout,max_new_tokens=256,policy_reply=None,response_source='identity_policy',
-                 characters=None,prompt_additions=None):
+                 characters=None,prompt_additions=None,prompt_builder=None):
         self.engine=engine;self.store=store;self.current=current;self.message=message;self.gate=gate
         self.max_new_tokens=max_new_tokens;self.policy_reply=policy_reply;self.response_source=response_source
         self.characters=characters;self.prompt_additions=prompt_additions or []
+        self.prompt_builder=prompt_builder
         self.events=Queue();self.stop=Event();self.finished=Event();self.state_lock=Lock()
         self.reason=None;self.committed=False
         self.timer=Timer(timeout,lambda:self.cancel('timeout'))
@@ -44,11 +45,22 @@ class StreamJob:
                 metrics=dict(seconds=0.0,output_tokens=0,response_source=self.response_source)
                 self.emit(answer)
             else:
-                messages=conversation_messages(self.current,self.message,self.characters)
+                trace={}
+                if self.prompt_builder:
+                    messages,trace=self.prompt_builder(self.stop)
+                else:
+                    messages=conversation_messages(self.current,self.message,self.characters)
+                if self.stop.is_set():
+                    raise GenerationStopped()
                 if messages and self.prompt_additions:
                     messages[0]['content'] += '\n\n' + '\n\n'.join(self.prompt_additions)
+                options={'generation_overrides':trace['generation_preset']} if trace.get('generation_preset') else {}
                 answer,metrics=self.engine.reply_stream(messages,self.current['model_mode'],self.stop,self.emit,
-                                                       max_new_tokens=self.max_new_tokens)
+                                                       max_new_tokens=self.max_new_tokens,**options)
+                if trace.get('memory_warning'):
+                    metrics['memory_warning']=trace['memory_warning']
+                if metrics.get('context_omitted_turns'):
+                    metrics['memory_warning']='本轮仍有部分旧对话超过上下文预算，可在会话记忆中继续整理。'
             with self.state_lock:
                 if self.stop.is_set():
                     raise GenerationStopped()

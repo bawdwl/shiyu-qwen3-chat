@@ -766,6 +766,7 @@ async function send(retrying = false) {
             state.current = await request("/sessions/" + id);
             renderMessages();
             setStatus(humanMetrics(event.data.metrics));
+            if (event.data.metrics?.memory_warning) toast(event.data.metrics.memory_warning);
           } else if (event.type === "error") {
             throw new Error(event.data.detail || "本轮没有完成。");
           }
@@ -1051,14 +1052,18 @@ function showCharacterDraft(card) {
   $("card-speech-style").value = card.speech_style || "";
   $("card-relationship").value = card.relationship || "";
   $("card-greeting").value = card.greeting || "";
+  $("card-scenario").value = card.scenario || "";
+  $("card-motivation").value = card.motivation || "";
+  $("card-preset").value = JSON.stringify(card.generation_preset || {});
   $("card-examples").value = (card.example_dialogue || []).map((row) => `${row.user}｜${row.character}`).join("\n");
+  $("card-use-examples").checked = card.use_examples === true;
   $("card-boundaries").value = card.boundaries || "";
   $("character-draft-notice").textContent = card.draft_notice || "生成内容为草稿，请检查后保存。";
   $("card-facts").value = (card.fixed_facts || []).map((fact) =>
     `${fact.status === "confirmed" ? "确认" : "待确认"}｜${fact.key}｜${fact.value}`,
   ).join("\n");
   $("card-worldbook").value = (card.worldbook || []).map((entry) =>
-    `${(entry.keywords || []).join(",")}｜${entry.title}｜${entry.content}`,
+    `${entry.enabled === false ? "禁用" : "启用"}｜${entry.priority || 0}｜${(entry.keywords || []).join(",")}｜${entry.title}｜${entry.content}`,
   ).join("\n");
   state.characterDraft = card;
   $("character-draft-fields").hidden = false;
@@ -1072,8 +1077,18 @@ function readCharacterDraft() {
   });
   const worldbook = $("card-worldbook").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line, index) => {
     const parts = line.split("｜");
-    if (parts.length < 3) throw new Error("世界书请按“关键词1,关键词2｜标题｜内容”填写。" );
-    return { id: `entry-${index + 1}`, keywords: parts.shift().split(/[，,]/).map((word) => word.trim()).filter(Boolean), title: parts.shift().trim(), content: parts.join("｜").trim(), enabled: true };
+    if (parts.length < 3) throw new Error("世界书请按“启用｜优先级｜关键词｜标题｜内容”填写。" );
+    let enabled = true, priority = 0;
+    if (parts.length >= 5 && ["启用", "禁用"].includes(parts[0].trim())) {
+      enabled = parts.shift().trim() === "启用";
+      const rank = parts.shift().trim();
+      if (!/^-?\d+$/.test(rank) || Number(rank) < -100 || Number(rank) > 100) throw new Error("世界书优先级必须是-100至100的整数。");
+      priority = Number(rank);
+    }
+    const keywords = parts.shift().split(/[，,]/).map((word) => word.trim()).filter(Boolean);
+    const title = parts.shift().trim();
+    const previous = (state.characterDraft?.worldbook || []).find((entry) => entry.title === title);
+    return { id: previous?.id || `entry-${Date.now()}-${index}`, keywords, title, content: parts.join("｜").trim(), enabled, priority };
   });
   const example_dialogue = $("card-examples").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
     const parts = line.split("｜");
@@ -1086,6 +1101,9 @@ function readCharacterDraft() {
     description: $("card-description").value.trim(), background: $("card-background").value.trim(),
     personality: $("card-personality").value.trim(), speech_style: $("card-speech-style").value.trim(),
     relationship: $("card-relationship").value.trim(), greeting: $("card-greeting").value.trim(), example_dialogue,
+    use_examples: $("card-use-examples").checked,
+    scenario: $("card-scenario").value.trim(), motivation: $("card-motivation").value.trim(),
+    generation_preset: JSON.parse($("card-preset").value.trim() || "{}"),
     boundaries: $("card-boundaries").value.trim(), fixed_facts: facts, worldbook,
   };
 }
@@ -1116,7 +1134,7 @@ $("generate-character").onclick = async () => {
   button.disabled = true;
   $("character-generation-status").textContent = "正在让本机 Qwen 整理角色卡，可能需要几十秒……";
   try {
-    const result = await jsonPost("/characters/generate", { inspiration }, 120000);
+    const result = await jsonPost("/characters/generate", { inspiration }, 240000);
     if (state.editingCharacterId) result.card.id = state.editingCharacterId;
     showCharacterDraft(result.card);
     $("character-generation-status").textContent = "草稿已生成。检查固定事实和世界书后再保存。";
@@ -1384,4 +1402,68 @@ document.querySelectorAll("[data-filter]").forEach(
 );
 $("toggle-profile").onclick = () =>
   $("character-panel").classList.toggle("profile-open");
+function showSessionMemory(memory) {
+  state.memoryRevision = memory.revision;
+  $("memory-auto").checked = memory.auto_enabled !== false;
+  $("memory-notes").value = memory.notes || "";
+  const quotes = $("memory-quotes");
+  quotes.replaceChildren();
+  state.memoryItems = memory.items || [];
+  if (!state.memoryItems.length) quotes.textContent = "还没有整理较早消息。最近的聊天原文仍直接提供给模型。";
+  state.memoryItems.forEach((item, index) => {
+    const label = document.createElement("label"), input = document.createElement("input"), text = document.createElement("span");
+    label.className = "setting-row";
+    input.type = "checkbox"; input.checked = true; input.dataset.memoryIndex = String(index);
+    text.textContent = `消息 ${item.message_id} · ${item.role === "user" ? "用户" : "角色"}：${item.quote}`;
+    label.append(input, text); quotes.append(label);
+  });
+  $("memory-status").textContent = `版本 ${memory.revision} · 已整理至消息 ${memory.covered_message_id || 0}`;
+}
+$("open-session-memory").onclick = async () => {
+  if (!state.current) return;
+  try {
+    const sid = state.current.id;
+    const memory = await request(`/sessions/${sid}/memory`);
+    if (state.current?.id !== sid) return;
+    state.memorySessionId = sid;
+    showSessionMemory(memory);
+    $("prompt-preview-text").textContent = "";
+    $("session-memory-dialog").showModal();
+  } catch (error) { toast(error.message); }
+};
+$("memory-save").onclick = async () => {
+  $("memory-save").disabled = true;
+  try {
+    const memory = await request(`/sessions/${state.memorySessionId}/memory`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({notes: $("memory-notes").value, auto_enabled: $("memory-auto").checked, revision: state.memoryRevision,
+        kept_items: [...$("memory-quotes").querySelectorAll("input[data-memory-index]")].filter((input) => input.checked).map((input) => Number(input.dataset.memoryIndex))}),
+    });
+    showSessionMemory(memory);
+    $("memory-status").textContent = `已保存 · 版本 ${memory.revision}`;
+  } catch (error) { $("memory-status").textContent = error.message; }
+  finally { $("memory-save").disabled = false; }
+};
+for (const [id, action] of [["memory-refresh", "refresh"], ["memory-restore", "restore"]]) {
+  $(id).onclick = async () => {
+    if (state.busy) { toast("请先等待当前任务完成"); return; }
+    setBusy("memory");
+    $("memory-status").textContent = action === "refresh" ? "正在整理较早消息，可能需要一点时间……" : "正在恢复……";
+    try {
+      const previousRevision = state.memoryRevision;
+      showSessionMemory(await jsonPost(`/sessions/${state.memorySessionId}/memory/${action}`, {}, 180000));
+      if (action === "refresh" && state.memoryRevision === previousRevision) $("memory-status").textContent = "暂无需要整理的较早完整对话；最近四轮仍保留原文。";
+    }
+    catch (error) { $("memory-status").textContent = error.message; }
+    finally { setBusy(null); }
+  };
+}
+$("prompt-preview").onclick = async () => {
+  try {
+    const query = encodeURIComponent($("draft").value.trim() || "继续聊聊");
+    const trace = await request(`/sessions/${state.memorySessionId}/prompt?message=${query}`);
+    $("prompt-preview-text").textContent = `输入 ${trace.input_tokens ?? "未计数"} / ${trace.input_budget} token；世界书命中 ${trace.worldbook_ids.length} 条；省略重复历史句 ${trace.repeated_history_sentences_removed || 0} 条\n`
+      + (trace.warning || "") + "\n" + trace.messages.map((m) => `[${m.role}]\n${m.content}`).join("\n\n");
+  } catch (error) { $("prompt-preview-text").textContent = error.message; }
+};
 initialize();

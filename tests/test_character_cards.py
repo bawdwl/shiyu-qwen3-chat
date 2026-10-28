@@ -12,10 +12,9 @@ class CharacterCardTests(unittest.TestCase):
             'speech_style': '亲切自然', 'relationship': '熟悉的朋友',
         }))
         prompt = runtime['prompt']
-        self.assertIn('默认用自然的陈述句结束', prompt)
-        self.assertIn('用户的问题已经回答完整时就停在答案处', prompt)
-        self.assertIn('禁止把“你呢？”', prompt)
-        self.assertIn('亲切和体贴不等于每轮追问', prompt)
+        self.assertIn('回应用户刚说的具体内容', prompt)
+        self.assertIn('不要重复上一轮回答或开场情境', prompt)
+        self.assertIn('不要每轮都追问', prompt)
 
     def test_card_generation_avoids_question_hook_examples(self):
         system = build_generation_messages('海边电台主持人')[0]['content']

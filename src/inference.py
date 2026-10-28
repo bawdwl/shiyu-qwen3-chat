@@ -49,10 +49,11 @@ def load_model(cache_dir=None, revision=MODEL_REVISION, local_files_only=True,mo
 class QwenChat:
     """只负责推理，历史由调用者传入，不把不同用户的对话存在模型中。"""
 
-    def __init__(self, adapter_run=None, trim_history=False,model_profile='qwen3-0.6b',same_chat_memory=False):
+    def __init__(self, adapter_run=None, trim_history=False,model_profile='qwen3-0.6b',same_chat_memory=False,input_budget=2048):
         # 默认保持离线评估原有的超长拒绝策略；在线服务单独启用窗口选择。
         self.trim_history=trim_history
         self.same_chat_memory=bool(same_chat_memory)
+        self.input_budget=input_budget
         profile=get_profile(model_profile)
         self.model_id=profile['model_id'];self.model_revision=profile['revision']
         self.adapter_available = False
@@ -73,7 +74,7 @@ class QwenChat:
 
     def _prepare_inputs(self,messages):
         inputs,metrics,_,omitted_pairs=prepare_context_details(
-            self.tokenizer,messages,trim_history=self.trim_history)
+            self.tokenizer,messages,trim_history=self.trim_history,budget=getattr(self,'input_budget',2048))
         if not self.same_chat_memory:
             return inputs,metrics
         query=next((m['content'] for m in reversed(messages) if m['role']=='user'),'')
@@ -84,7 +85,7 @@ class QwenChat:
         baseline_tokens=metrics['original_input_tokens']
         baseline_omitted=metrics['context_omitted_turns']
         inputs,final_metrics,_,_=prepare_context_details(
-            self.tokenizer,augmented,trim_history=self.trim_history)
+            self.tokenizer,augmented,trim_history=self.trim_history,budget=getattr(self,'input_budget',2048))
         final_metrics.update(memory_metrics)
         final_metrics['same_chat_memory_baseline_input_tokens']=baseline_tokens
         final_metrics['same_chat_memory_baseline_omitted_turns']=baseline_omitted

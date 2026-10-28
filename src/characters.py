@@ -164,6 +164,12 @@ def conversation_messages(current,question=None,characters=None):
     if role['prompt']:
         profile=role.get('profile')
         prompt=role['prompt']
+        card=role.get('custom_card')
+        if card and not current['messages'] and card.get('scenario'):
+            prompt+='\n\n【开场情境，仅作为聊天开始时的背景，之后随对话推进】\n'+card['scenario']
+        if card and not current['messages'] and card.get('use_examples') and card.get('example_dialogue'):
+            prompt+='\n\n【语气示例，不是本次对话，不要照抄】\n'+'\n'.join(
+                f"用户：{item['user']}\n{card['name']}：{item['character']}" for item in card['example_dialogue'][:2])
         identity=role.get('identity')
         if identity:
             prompt+='\n\n【固定角色身份档案】'
