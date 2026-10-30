@@ -9,6 +9,9 @@ certifi==2026.10.19
 click==8.5.0
 colorama==0.4.6
 fastapi==0.159.1
+cffi==2.1.1
+cryptography==50.0.2
+diffusers==0.42.1
 filelock==3.32.3
 fsspec==2026.7.0
 gradio==6.30.0

@@ -23,10 +23,17 @@ class ProductAppTests(unittest.TestCase):
     def tearDown(self):
         self.client.__exit__(None,None,None);self.temp.cleanup()
     def test_app_assets_and_catalogue(self):
-        self.assertIn('拾语',self.client.get('/ui/').text)
-        for asset in ('app.js','style.css','icon.svg','manifest.webmanifest'):
-            self.assertEqual(self.client.get('/ui/assets/'+asset).status_code,200)
-        self.assertIn('固定身份档案',self.client.get('/ui/assets/app.js').text)
+        page=self.client.get('/ui/').text
+        self.assertIn('拾语',page)
+        import re
+        assets=re.findall(r'(?:src|href)="([^"]+)"',page)
+        self.assertTrue(any(asset.endswith('.js') for asset in assets))
+        self.assertTrue(any(asset.endswith('.css') for asset in assets))
+        for asset in assets:
+            if asset.startswith('/ui/assets/'):
+                self.assertEqual(self.client.get(asset).status_code,200)
+        self.assertEqual(self.client.get('/ui/icon.svg').status_code,200)
+        self.assertEqual(self.client.get('/ui/media/portraits/xiaoman.png').status_code,200)
         self.assertEqual(self.client.get('/ui/assets/../backend.py').status_code,404)
         self.assertEqual([role['id'] for role in self.client.get('/characters').json()['characters']],
                          ['interview','companion'])
@@ -44,6 +51,10 @@ class ProductAppTests(unittest.TestCase):
         self.assertEqual(self.client.post('/chat',json=dict(session_id=sid,message='你好')).status_code,200)
         self.assertEqual(self.engine.calls[-1][0]['role'],'system')
         self.assertIn('小满',self.engine.calls[-1][0]['content'])
+        self.assertIn('直接输出角色这一次真正发出的完整聊天消息',self.engine.calls[-1][0]['content'])
+        self.assertIn('不要添加“角色说出口”',self.engine.calls[-1][0]['content'])
+        self.assertNotIn('<speech>',self.engine.calls[-1][0]['content'])
+        self.assertNotIn('<inner_thought>',self.engine.calls[-1][0]['content'])
         saved=self.client.get('/sessions/'+sid).json()
         self.assertEqual(saved['character_id'],'companion');self.assertEqual(len(saved['messages']),2)
     def test_explicit_ai_identity_question_is_truthful_in_normal_and_stream_chat(self):
@@ -202,6 +213,12 @@ class ProductAppTests(unittest.TestCase):
         migrated=ChatStore(path).get('old')
         self.assertEqual(migrated['character_id'],'assistant')
         self.assertEqual(migrated['messages'][0]['content'],'原有消息')
+
+    def test_character_delete_rejects_builtin_and_missing_roles(self):
+        built_in=self.client.delete('/characters/companion')
+        missing=self.client.delete('/characters/custom-does-not-exist')
+        self.assertEqual(built_in.status_code,409)
+        self.assertEqual(missing.status_code,404)
 
     def test_prompt_comparison_registry_does_not_change_live_characters(self):
         import copy

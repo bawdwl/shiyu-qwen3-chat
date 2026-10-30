@@ -1,11 +1,36 @@
 import json
 import unittest
 
+from characters import CHARACTERS, conversation_messages
 from character_cards import (build_generation_messages, card_to_runtime, normalize_card,
                              parse_generated_card, retrieve_worldbook)
 
 
 class CharacterCardTests(unittest.TestCase):
+    def test_persisted_opening_does_not_hide_first_turn_scenario(self):
+        card = normalize_card({
+            'id': 'custom-scenario-test',
+            'name': '林晚',
+            'description': '夜班电台主持人。',
+            'scenario': '暴雨夜，直播间的热线突然响了起来。',
+            'greeting': '（摘下耳机）你来得正好，这通电话已经响了三次。',
+            'knowledge_boundary': {},
+        })
+        runtime = card_to_runtime(card)
+
+        messages = conversation_messages(
+            {
+                'character_id': card['id'],
+                'messages': [
+                    {'role': 'assistant', 'content': card['greeting']},
+                ],
+            },
+            '接起来听听。',
+            {**CHARACTERS, card['id']: runtime},
+        )
+
+        self.assertIn('暴雨夜，直播间的热线突然响了起来。', messages[0]['content'])
+
     def test_runtime_prompt_makes_followup_questions_optional_and_relevant(self):
         runtime = card_to_runtime(normalize_card({
             'name': '林间电台', 'personality': '温柔、善于倾听',
@@ -20,6 +45,9 @@ class CharacterCardTests(unittest.TestCase):
         system = build_generation_messages('海边电台主持人')[0]['content']
         self.assertIn('每条回复末尾都问一句', system)
         self.assertIn('示例回复不要都以问题收尾', system)
+        self.assertIn('greeting 必须是一条可直接发送给用户的首条角色聊天消息', system)
+        self.assertIn('具体场景', system)
+        self.assertIn('剧情钩子', system)
 
     def test_worldbook_matches_enabled_keyword_entries_and_respects_limit(self):
         card = normalize_card({

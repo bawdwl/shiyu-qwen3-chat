@@ -1,6 +1,15 @@
 """原创预设角色；系统设定由服务端绑定会话，不是额外训练的模型。"""
 import re
 
+
+NATURAL_ROLEPLAY_INSTRUCTION = """
+【回复表现方式】
+- 直接输出角色这一次真正发出的完整聊天消息，不要添加“角色说出口”“内心独白”“动作与神态”等标题，也不要输出 JSON 或 XML 标签。
+- 动作、表情和语气可以用简短的中文括号自然嵌入，例如“（噗地笑出声）”“（别过脸，却把杯子握得更紧）”。
+- 不默认展示好感度、信任值、关系阶段或内心独白。只有用户明确要求角色说心里话时，才可以用“（OS：……）”作一小句自然的心里话。
+- 动作不要替用户行动，不要每次都加动作，也不要用固定反问收尾。
+""".strip()
+
 # Decorative details overwhelmed ordinary chat in the recorded development run.
 # Keep them available for explicit persona questions rather than every message.
 PERSONA_QUERY = re.compile(r'角色设定|角色背景|角色介绍|你的人设|你的设定|你(?:平时|平常|最|通常|都)?(?:喜欢喝|爱喝|喜欢什么|喜欢哪些|是男生吗|是女生吗|什么性别)|小满(?:喜欢喝|爱喝|喜欢什么|喜欢哪些)')
@@ -165,9 +174,14 @@ def conversation_messages(current,question=None,characters=None):
         profile=role.get('profile')
         prompt=role['prompt']
         card=role.get('custom_card')
-        if card and not current['messages'] and card.get('scenario'):
+        # An automatically persisted opening is an assistant message. The
+        # scenario is still first-turn context until the user has spoken.
+        has_user_turn = any(
+            message.get('role') == 'user' for message in current['messages']
+        )
+        if card and not has_user_turn and card.get('scenario'):
             prompt+='\n\n【开场情境，仅作为聊天开始时的背景，之后随对话推进】\n'+card['scenario']
-        if card and not current['messages'] and card.get('use_examples') and card.get('example_dialogue'):
+        if card and not has_user_turn and card.get('use_examples') and card.get('example_dialogue'):
             prompt+='\n\n【语气示例，不是本次对话，不要照抄】\n'+'\n'.join(
                 f"用户：{item['user']}\n{card['name']}：{item['character']}" for item in card['example_dialogue'][:2])
         identity=role.get('identity')
@@ -188,6 +202,7 @@ def conversation_messages(current,question=None,characters=None):
         include_profile = role.get('profile_policy', 'always') != 'on_request' or bool(PERSONA_QUERY.search(latest_user))
         if profile and include_profile:
             prompt+='\n以下是角色的虚构设定，不代表真实经历，不要声称正在现实中做这些事。场景：'+profile['scene']+'。角色介绍：'+profile['about']
+        prompt+='\n\n'+NATURAL_ROLEPLAY_INSTRUCTION
         result.append(dict(role='system',content=prompt))
     result.extend(dict(role=m['role'],content=m['content']) for m in current['messages'])
     if question is not None:

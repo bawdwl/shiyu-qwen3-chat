@@ -1,110 +1,226 @@
-# 拾语：本地角色聊天
+# 拾语 SHIYU
 
-拾语是一个运行在个人电脑上的角色聊天网页。它使用本地的 Qwen3-1.7B 生成回答，网页和 FastAPI 后端负责角色设定、流式聊天与 SQLite 会话记录。模型运行在自己的电脑上，无需购买聊天 API。
+拾语是一套面向中文虚拟角色陪伴场景的 PC 与 Android 双端聊天应用。它把云端大模型、角色卡、世界书、长期记忆、情绪关系状态、语音输入和角色语音组织成一条可运行的聊天链路。
 
-## 界面预览
+当前主线使用 **OpenCode Go `deepseek-v4.1-flash`**，同时支持独立 DeepSeek Provider。API Key 由使用者在本机填写，不会写入源码、数据库快照或 Git 仓库。
 
-![拾语首页：角色发现页面](docs/images/shiyu-home-2026-10-28.png)
+![拾语 PC 首页](docs/images/shiyu-home-deepseek-2026-10-28.png)
 
-## 已实现的功能
+## 2026-10-30 更新
 
-- **本地聊天**：Qwen3-1.7B 在电脑上生成回答，网页以流式方式显示文字。使用者可以停止生成、新建会话、查看或删除聊天记录；记录保存在本机 SQLite。
-- **角色创建**：提供小满、言川两个默认角色。可以输入关键词让本地模型生成角色卡草稿，检查和修改身份、背景、性格、说话风格等内容后保存；自定义角色同样使用本地模型。
-- **世界书和上下文**：角色可配置关键词触发的设定条目，聊天时与角色卡、近期对话一起组成提示。开场情境不再每一轮重复注入；可查看提示预览。
-- **同会话记忆**：长对话接近输入预算时，系统可从较早消息中摘取原文，作为后续聊天的参考；支持查看、编辑、刷新和恢复。它可能漏记或选错，新会话不会继承旧会话的动态记忆。详见[角色卡与会话记忆](docs/角色卡与会话记忆.md)。
-- **语音输入**：网页支持麦克风录音或上传录音，发送到本地 Whisper 识别后，再由使用者检查和发送文字。模型需要另行准备；网页直接录音的识别准确率曾低于上传已有录音，尚未完成系统评测。
-- **角色语音输出**：回答完成后点击播放。后端已接入 GPT-SoVITS 本机服务，可按角色保存参考音频与对应文字，选择不同音色；未配置参考音色的角色可回退到本地 MeloTTS。作者已用自行录制的参考音频验证言川角色的网页朗读链路，试听反馈是可以听清；不代表所有音色都已验证。
+本次更新把仓库从早期的本地 Qwen 单页原型升级为当前双端产品代码：
 
-语音是分步操作，尚不是边识别边回答的实时语音通话。开发机上 GPT-SoVITS 使用独立的 Python 环境和 CPU 服务，曾有约 7 秒语音需要约 13 秒合成的单次记录；尚未系统评测延迟、音质或 GPU 与聊天模型同时运行的显存。
+- PC 迁移到 React + TypeScript + Vite + FastAPI + SQLite。
+- Android 加入 Kotlin + Jetpack Compose + Room 客户端。
+- 两端支持 OpenCode Go 与 DeepSeek，可分别保存 Key 并切换。
+- 新增角色卡、世界书、知识边界、固定事实和唯一持续对话。
+- 新增自动结构化长期记忆、任务重试、事实有效期和删除墓碑。
+- PC 加入 FTS5 + 本地 BGE 混合检索；Android 使用 FTS4 与词法排序回退。
+- 双端加入受限更新且不默认展示数值的内部状态。
+- 双端恢复单条自然回复，动作写在中文括号中；创建或重置角色时生成主动剧情开场。
+- PC 加入 Whisper、GPT-SoVITS 与 MeloTTS 适配；Android 加入 sherpa-onnx ASR、Kokoro TTS。
+- Android 保留 MediaPipe SD1.5 本地头像和千问 Qwen-Image 云端头像。
+- PC 网页本地生图入口已移除，只保留已有头像读取。
+- 更新复现文档、测试脚本、密钥排除规则和 Android 可安装包。
 
-## 在 Windows 上安装和启动
+完整现状与限制见 [项目现状审计](docs/项目现状与网页建议落实审计_2026-10-30.md)，安装细节见 [使用与复现](docs/使用与复现.md)。
 
-下面是文字聊天的完整步骤。项目开发环境为 Windows、Python 3.11 和 NVIDIA RTX 4060 Laptop 8GB；其他显卡或 CPU 环境未完整验证。首次安装需要下载 Python 依赖和数 GB 的模型文件，请预留足够磁盘空间。需要能够访问 GitHub、PyTorch 和 Hugging Face。
+## 已实现功能
 
-### 1. 获取代码
+### 聊天与角色
 
-安装 Git 和 [Miniconda 或 Anaconda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)。打开 **Anaconda Prompt**，选择一个你想保存项目的位置，执行：
+- 自定义角色、默认角色和角色卡生成草稿。
+- 身份、背景、性格、说话方式、关系、互动边界和示例对话。
+- 关键词触发世界书，固定事实优先于聊天中的即兴内容。
+- 时代、知识截止、世界范围、允许/禁止知识与禁止词边界。
+- 每个角色只有一个持续对话。
+- PC SSE 流式回答、停止生成、超时与 Provider 错误提示。
+- Android 原生流式读取、停止生成与本地历史。
+- 图片输入，可交给支持视觉的云端模型。
+- 删除、重置角色及其消息、记忆、图片和状态。
+
+### 长期记忆
+
+- 回复保存后自动创建持久后台任务，不阻塞当前聊天。
+- 从对话中提取用户事实、角色自述、共同事件、计划和边界。
+- 候选事实必须有来源消息 ID、说话人和逐字证据。
+- 自动执行新增、合并、更正、疑义和忽略。
+- 旧事实保留为历史版本；删除操作创建墓碑，旧原话不能自动复活。
+- PC 使用 FTS5 + 可选本地 `BAAI/bge-small-zh-v1.5`。
+- Android 使用 FTS4 中文分词，并保留可选语义 Provider 接口。
+- 结构化事实、摘要和历史摘录使用统一上下文预算。
+- 每个角色每天有独立的后台记忆 Token 预算。
+
+### 内部状态
+
+双端可保存心情、熟悉度、信任度、温暖度、关系阶段和用户边界。状态变化必须绑定证据，受单次变化幅度和自然衰减限制。状态作为自然语言提示影响角色表达，不默认在聊天界面展示数字。
+
+### 语音与图片
+
+| 能力 | PC | Android |
+|---|---|---|
+| 语音识别 | Whisper | sherpa-onnx 本地 ASR |
+| 角色语音 | GPT-SoVITS + MeloTTS 回退 | Kokoro 本地 TTS，多音色 |
+| 交互方式 | 录音/上传 → 识别 → 发送 → 回复后播放 | 录音 → 识别 → 发送 → 回复后播放 |
+| 图片输入 | 支持 | 支持 |
+| 图片生成 | 已移除 | MediaPipe SD1.5 本地生成、千问 Qwen-Image 云端生成 |
+
+语音目前不是实时电话式双向通话，也没有自动打断。
+
+## 快速使用 PC 端
+
+### 环境
+
+- Windows 10/11
+- Python 3.11
+- Git
+- pnpm 或 Node.js 20+
+- 可选：NVIDIA GPU。当前主链路使用云端 API，显卡不是必需条件。
+
+### 安装
 
 ```powershell
 git clone https://github.com/bawdwl/shiyu-qwen3-chat.git
 cd shiyu-qwen3-chat
-```
 
-也可以在 GitHub 选择 **Code → Download ZIP**，解压后在终端进入解压出的文件夹。下面所有命令都在项目根目录执行。
-
-### 2. 创建独立环境并安装依赖
-
-```powershell
 conda create -n shiyu-chat python=3.11 pip -y
 conda activate shiyu-chat
-python -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
 python -m pip install -r requirements-lock-windows-py311.txt
+
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend build
 ```
 
-安装后检查 Python 能否识别 NVIDIA 显卡：
+仓库同时包含已经构建好的 `web/react-dist/`；修改前端源码后需要重新运行构建。
+
+### 启动文字聊天
 
 ```powershell
-python -c "import torch; print('CUDA 可用:', torch.cuda.is_available()); print('显卡:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else '未检测到')"
+python launch_app.py --provider opencode --speech-provider off --asr-provider off
 ```
 
-如果显示 `CUDA 可用: False`，请检查 NVIDIA 驱动和安装的 PyTorch 版本；不需要自行安装完整 CUDA Toolkit 才能使用带 CUDA 的 PyTorch。本项目尚未完成 CPU-only 部署验证。
+打开 <http://127.0.0.1:8000/ui/>，在设置中选择 Provider 并填写自己的 API Key。API Key 通过本机服务保存到加密 Secret Store，不会发送回浏览器。
 
-### 3. 下载基础模型
+也可以改用 DeepSeek：
 
 ```powershell
-python src/fetch_chat_model.py
+python launch_app.py --provider deepseek --speech-provider off --asr-provider off
 ```
 
-脚本从 [Qwen/Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B) 下载固定版本到 `outputs/models/qwen3-1.7b/`，并记录文件信息。模型权重不包含在代码仓库里。若下载失败，先检查网络和 Hugging Face 访问；不要把不完整的下载当作模型已就绪。
-
-### 4. 启动网页
+### 启用 PC BGE 语义记忆
 
 ```powershell
-python launch_app.py --model-profile qwen3-1.7b --speech-provider off --asr-provider off
+python scripts/fetch_embedding_model.py
 ```
 
-首次加载模型需要等待。看到终端提示打开网址后，访问 **http://127.0.0.1:8000/ui/**，选择角色并发送消息。保持终端窗口打开；在终端按 `Ctrl+C` 停止服务。接口文档位于 http://127.0.0.1:8000/docs。
+模型缺失或运行失败时，应用会自动回退到 FTS5 和词法检索。
 
-上面的命令只启动文字聊天。GPT-SoVITS 功能已经在开发机接通，但新机器仍需另外安装官方 GPT-SoVITS、下载相应权重、准备独立运行环境和参考音频；这些文件不随本仓库提供。当前还没有经过验证的完整一键安装流程，**不能按上述命令直接获得语音功能**。
+### 启用 PC 语音
 
-详细步骤、CPU 配置与常见问题见 [Windows 语音部署](docs/语音部署.md)。
+PC 语音依赖单独的 Whisper、MeloTTS 或 GPT-SoVITS 模型与服务，不包含在 Git 仓库中。模型准备和启动方式见 [语音部署](docs/语音部署.md)。
 
-在已经按本项目路径准备好 GPT-SoVITS 服务、CPU 配置和角色参考音频的开发环境中，可使用下面的命令启动按角色音色路由及本地 Whisper：
+## 安装 Android 端
+
+已构建调试包：[shiyu-android-0.9.4.apk](release/shiyu-android-0.9.4.apk)
+
+- 版本：`0.9.4 / versionCode 14`
+- Room schema：10
+- APK SHA-256：`EB05102FECF867446F6EF99472E816E9154046DF678C995F0D3A3C387D5B95D7`
+- 安装后请在设置中填写自己的 OpenCode Go 或 DeepSeek Key。
+
+APK 包含本地语音运行库和语音模型，因此体积约 441 MiB。MediaPipe SD1.5 生图模型约 1.78 GiB，不随 APK 分发，需要在手机中单独导入。
+
+### 从源码构建 Android
+
+需要 JDK 17、Android SDK 35 和 Android Studio 或等价工具链。
 
 ```powershell
-python launch_app.py --model-profile qwen3-1.7b --speech-provider profiles --asr-provider whisper
+$env:JAVA_HOME = "C:\path\to\jdk-17"
+$env:ANDROID_HOME = "C:\Users\<you>\AppData\Local\Android\Sdk"
+.\scripts\build_android.ps1
 ```
 
-启动器会查找 `third_party/GPT-SoVITS/api_v2.py`、`outputs/gpt-sovits-env/python.exe` 和 `outputs/gpt-sovits-tts-cpu.yaml`；这些是开发机路径约定，而不是新机器的安装步骤。Whisper 与 MeloTTS 的模型也需要单独准备。参考音频及逐字稿必须有权使用，开发者的个人录音不会随仓库发布。[GPT-SoVITS 官方仓库](https://github.com/RVC-Boss/GPT-SoVITS)提供上游安装信息；本项目目前尚未完成从空环境配置到角色播放的复现说明。
-
-## 日常再次使用
-
-```powershell
-conda activate shiyu-chat
-cd 你的项目目录\shiyu-qwen3-chat
-python launch_app.py --model-profile qwen3-1.7b --speech-provider off --asr-provider off
-```
-
-其中 `你的项目目录` 换成实际路径。已下载模型的情况下不需要重新下载。聊天记录默认保存在项目下的 `outputs/chat.sqlite3`，请自行备份。
-
-## 常见问题
-
-- **端口 8000 被占用或提示已有服务版本不一致**：先停止占用端口的旧拾语服务，再启动新版；不要同时启动两份模型服务。
-- **启动失败或等待超时**：查看 `outputs/app-service.log`；确认模型下载完整、显卡可用且有足够显存。
-- **回答不连贯或重复**：这是小模型及提示组织的局限。可以编辑角色卡、精简设定，或开启新对话；会话记忆不能保证完全准确。
-- **角色生成内容不合适**：自动生成的是草稿，请在保存前检查并修改。
-
-## 项目结构
+输出：
 
 ```text
-launch_app.py             启动入口
-src/                      聊天接口、模型调用、角色卡与存储
-web/                      网页代码及界面必需的角色资源
-tests/                    自动测试
-docs/                     功能说明
-requirements-lock-windows-py311.txt  Windows 依赖版本
+android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-项目是单机、单用户原型，没有经过生产环境或全新机器完整安装验收。代码采用 [AGPL-3.0](LICENSE)；模型、角色素材和其他第三方组件各自遵循上游许可。
+也可以直接在 Android Studio 中打开 `android/` 并运行 `app` 配置。
 
+MediaPipe 生图模型下载：
+
+```powershell
+python scripts/fetch_mediapipe_sd15.py
+```
+
+下载后在拾语的“应用设置”中导入。云端头像需要另外填写千问图片 API Key。
+
+## 数据与密钥
+
+- 仓库不包含 API Key、聊天数据库、个人录音、角色生成图片、模型权重或 LoRA Adapter。
+- PC 的 Key、数据库和语音档案默认位于 Git 忽略的 `outputs/`。
+- Android 的 Key 使用 Android Keystore/EncryptedSharedPreferences。
+- 角色、消息、记忆和状态保存在各自设备的 Room 或 SQLite 中。
+- PC 与 Android 目前不会自动同步数据。
+- 重置角色会删除该角色的消息、长期记忆、图片和状态。
+
+如果发现任何泄露的凭证，请立即在 Provider 控制台撤销并更换。不要通过 Issue 或 Pull Request 上传 API Key。
+
+## 测试
+
+```powershell
+python -B scripts/check_project.py
+node --test tests/frontend_state.test.cjs
+pnpm --dir frontend build
+```
+
+Android：
+
+```powershell
+cd android
+.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon
+```
+
+当前发布前验证结果：
+
+- 公开仓库的生产链路 Python 测试：222 项通过。
+- 本地完整研究目录此前的全量验证：376 项通过。
+- PC 前端状态测试：39 项通过。
+- React 生产构建通过。
+- Android JVM：40 项通过。
+- Android `0.9.4` debug APK 构建并在一加 Ace 5 完成覆盖安装。
+- Room schema 10 迁移、FTS4 回填、MediaPipe 本地头像和千问云端头像入口已真机验证。
+
+这些结果证明主要工程流程可运行，不等同于大规模真实聊天质量评估。
+
+## 当前限制
+
+- 还没有全新的留出对话集和独立盲评，不能只用现有测试证明角色自然度。
+- Android 没有内置 BGE，语义召回弱于 PC。
+- PC 与 Android 的摘要管理尚未完全对等。
+- 反思记忆、人物成长、长期目标和剧情 World Clock 未完成。
+- 认知边界尚未实现完整 K1–K5 与多角色隐藏事实隔离。
+- 没有账号、多用户、跨设备同步、内容审核和生产级并发。
+- 还没有完整浏览器 E2E、Android UI instrumentation 和长时间运行测试。
+- `src/backend.py` 与 Android `ChatRepository.kt` 仍偏大。
+
+## 目录
+
+```text
+launch_app.py                 PC 启动入口
+src/                          FastAPI、Provider、记忆、提示词、存储与语音
+frontend/                     React + TypeScript 源码
+web/react-dist/               已构建 PC 前端
+web/portraits/                默认角色图片与来源说明
+android/                      Kotlin + Compose + Room Android 项目
+tests/                        当前生产链路回归测试
+scripts/                      构建、模型下载和检查脚本
+docs/                         架构、验收、语音与复现文档
+release/                      可安装 Android APK（Git LFS）
+```
+
+## 许可证
+
+项目原创代码采用 [AGPL-3.0](LICENSE)。模型、模型转换产物、角色图片、语音模型和其他第三方组件分别遵循各自上游许可，详见 [LICENSE-NOTICE.md](LICENSE-NOTICE.md)。
 

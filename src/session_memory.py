@@ -6,11 +6,12 @@ from stream_job import GenerationStopped
 from same_chat_memory import _query_terms
 
 
-def retrieve_covered_history(history, covered_message_id, query, limit=4):
+def retrieve_covered_history(history, covered_message_id, query, limit=4, excluded_message_ids=()):
     """Recover short attributed source excerpts by topic, only from this session."""
     terms = {term for term in _query_terms(query) if len(term) >= 2}
     if not terms or not covered_message_id:
         return []
+    excluded = set(excluded_message_ids)
     covered = [item for item in history if item['id'] <= covered_message_id]
     candidates = []
     for index in range(0, len(covered) - 1, 2):
@@ -24,6 +25,8 @@ def retrieve_covered_history(history, covered_message_id, query, limit=4):
     selected, seen = [], set()
     for _, _, pair in candidates:
         for source in pair:
+            if source['id'] in excluded:
+                continue
             matches = [source['content'].find(term) for term in terms if term in source['content']]
             start = max(0, min(matches) - 45) if matches else 0
             item = dict(message_id=source['id'], role=source['role'], quote=source['content'][start:start + 180])
@@ -36,7 +39,7 @@ def retrieve_covered_history(history, covered_message_id, query, limit=4):
     return selected
 
 
-def select_memory(previous, chunk, engine, stop=None):
+def select_memory(previous, chunk, engine, stop=None, session_id=None):
     stop = stop or Event()
     source_rows = list(chunk)
     for item in previous.get('items', []):
@@ -51,7 +54,15 @@ def select_memory(previous, chunk, engine, stop=None):
         '最多6项，每项最多80字；优先保留更正和重要细节，舍弃招呼、套话、重复及已回答的普通问题。不得改写引文。')),
         dict(role='user', content=json.dumps(source_rows, ensure_ascii=False))]
     pieces = []
-    answer, _ = engine.reply_stream(prompt, 'base', stop, pieces.append, max_new_tokens=768)
+    overrides = (
+        {'_opencode_session_id': f'memory-{session_id or next(iter(source_rows))["message_id"]}'}
+        if getattr(engine, 'provider_name', None) == 'opencode'
+        else None
+    )
+    answer, _ = engine.reply_stream(
+        prompt, 'base', stop, pieces.append, max_new_tokens=768,
+        generation_overrides=overrides,
+    )
     if stop.is_set():
         raise GenerationStopped()
     start, end = answer.find('{'), answer.rfind('}')
@@ -107,7 +118,7 @@ def refresh_memory(store, current, engine, stop=None, force=False):
             break
     if not chunk:
         raise ValueError('较早消息过长，暂时无法安全整理；原始记录已保留。')
-    result = select_memory(previous, chunk, engine, stop)
+    result = select_memory(previous, chunk, engine, stop, session_id=current['id'])
     if stop is not None and stop.is_set():
         raise GenerationStopped()
     return store.save_memory(current['id'], result, expected_revision=previous['revision'])

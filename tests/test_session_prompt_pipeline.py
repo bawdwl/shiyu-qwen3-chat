@@ -22,6 +22,14 @@ class SummaryEngine:
 
 
 class SessionMemoryTests(unittest.TestCase):
+    def test_excluded_history_does_not_consume_retrieval_limit(self):
+        rows = []
+        for i in range(5):
+            rows.extend([dict(id=i*2+1, role='user', content='咖啡是哪种？'),
+                         dict(id=i*2+2, role='assistant', content=f'第{i}杯咖啡是手冲。')])
+        result = retrieve_covered_history(rows, 10, '咖啡', limit=2,
+                                          excluded_message_ids=[9, 10, 7, 8])
+        self.assertEqual([row['message_id'] for row in result], [5, 6])
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = ChatStore(Path(self.temp.name) / 'chat.db')

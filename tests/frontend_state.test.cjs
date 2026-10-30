@@ -543,3 +543,38 @@ test('blocked browser storage keeps the visible draft and explains persistence f
   assert.equal(h.node('draft').value, '不要丢失');
   assert.match(h.node('toast').textContent, /无法保存草稿/);
 });
+
+test('structured memory never asks users to approve routine memories', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'frontend', 'src', 'App.tsx'),
+    'utf8',
+  );
+  assert.doesNotMatch(source, /从最近对话提取/);
+  assert.doesNotMatch(source, /确认当前事实/);
+  assert.doesNotMatch(source, /确认这是更正/);
+  assert.match(source, /聊天过程中由后台自动整理/);
+});
+
+test('chat auto-scroll is confined to the message viewport', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'frontend', 'src', 'App.tsx'),
+    'utf8',
+  );
+  assert.doesNotMatch(source, /scrollIntoView\s*\(/);
+  assert.match(source, /messagesRef\.current/);
+  assert.match(source, /container\.scrollTo\s*\(/);
+});
+
+test('web character creation does not call local image generation', () => {
+  const app = fs.readFileSync(
+    path.join(__dirname, '..', 'frontend', 'src', 'App.tsx'),
+    'utf8',
+  );
+  const api = fs.readFileSync(
+    path.join(__dirname, '..', 'frontend', 'src', 'api.ts'),
+    'utf8',
+  );
+  assert.doesNotMatch(app, /generateCharacterAvatar/);
+  assert.doesNotMatch(app, /SD1\.5/);
+  assert.doesNotMatch(api, /generateCharacterAvatar/);
+});

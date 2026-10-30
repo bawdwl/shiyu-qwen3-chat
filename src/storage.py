@@ -2,7 +2,7 @@
 import sqlite3
 import json
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,7 +25,9 @@ class ChatStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK(role IN ('user','assistant')),
-                    content TEXT NOT NULL, created_at TEXT NOT NULL);
+                    content TEXT NOT NULL,
+                    display_json TEXT,
+                    created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS messages_session_order ON messages(session_id,id);
                 CREATE TABLE IF NOT EXISTS character_cards(
                     id TEXT PRIMARY KEY, name TEXT NOT NULL, card_json TEXT NOT NULL,
@@ -42,12 +44,92 @@ class ChatStore:
                     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                     revision INTEGER NOT NULL, payload TEXT NOT NULL,
                     PRIMARY KEY(session_id,revision));
+                CREATE TABLE IF NOT EXISTS role_conversations(
+                    character_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS app_settings(
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS model_usage(
+                    request_id TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    session_id TEXT,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    cached_tokens INTEGER NOT NULL DEFAULT 0,
+                    usage_day TEXT NOT NULL,
+                    created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS model_usage_day
+                    ON model_usage(provider,usage_day);
+                CREATE TABLE IF NOT EXISTS uploaded_images(
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+                    message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+                    file_path TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    byte_size INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    width INTEGER NOT NULL,
+                    height INTEGER NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS character_state(
+                    character_id TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS long_term_memories(
+                    id TEXT PRIMARY KEY,
+                    character_id TEXT NOT NULL,
+                    memory_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source_message_ids TEXT NOT NULL DEFAULT '[]',
+                    confidence REAL,
+                    importance REAL,
+                    valid_from TEXT,
+                    valid_to TEXT,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS long_term_memories_character
+                    ON long_term_memories(character_id,status,updated_at);
+                CREATE TABLE IF NOT EXISTS state_transitions(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    character_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    old_payload TEXT,
+                    new_payload TEXT,
+                    reason TEXT NOT NULL,
+                    source_message_ids TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS character_assets(
+                    id TEXT PRIMARY KEY,
+                    character_id TEXT NOT NULL,
+                    asset_type TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    prompt TEXT NOT NULL DEFAULT '',
+                    seed INTEGER,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS character_assets_character
+                    ON character_assets(character_id,asset_type,created_at);
             ''')
             columns={r['name'] for r in db.execute('PRAGMA table_info(sessions)')}
             if 'character_id' not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN character_id TEXT NOT NULL DEFAULT 'assistant'")
             if 'model_id' not in columns:
                 db.execute("ALTER TABLE sessions ADD COLUMN model_id TEXT NOT NULL DEFAULT 'Qwen/Qwen3-0.6B'")
+            if 'provider' not in columns:
+                db.execute("ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'local'")
+            message_columns={r['name'] for r in db.execute('PRAGMA table_info(messages)')}
+            if 'display_json' not in message_columns:
+                db.execute("ALTER TABLE messages ADD COLUMN display_json TEXT")
             db.execute('''INSERT OR IGNORE INTO voice_profiles
                           (character_id,display_name,voice_style,reference_text,reference_audio_path,language,updated_at)
                           VALUES(?,?,?,?,?,?,?)''',
@@ -68,12 +150,75 @@ class ChatStore:
         finally:
             db.close()
 
-    def create(self,mode,character_id='assistant',model_id='Qwen/Qwen3-0.6B'):
+    def create(self,mode,character_id='assistant',model_id='Qwen/Qwen3-0.6B',provider='local'):
         sid=str(uuid4());timestamp=now()
         with self.connect() as db:
-            db.execute('INSERT INTO sessions(id,model_mode,created_at,updated_at,character_id,model_id) VALUES(?,?,?,?,?,?)',
-                       (sid,mode,timestamp,timestamp,character_id,model_id))
+            db.execute('''INSERT INTO sessions
+                          (id,model_mode,created_at,updated_at,character_id,model_id,provider)
+                          VALUES(?,?,?,?,?,?,?)''',
+                       (sid,mode,timestamp,timestamp,character_id,model_id,provider))
         return self.get(sid)
+
+    def get_or_create_role_conversation(self,character_id,mode='base',
+                                        model_id='deepseek-flash',provider='deepseek'):
+        """Return the single persistent conversation for one character.
+
+        Older versions could create many sessions per character. They remain
+        readable through the legacy session APIs, while this mapping is the
+        authoritative one-conversation-per-role record used by new clients.
+        """
+        timestamp=now()
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('''SELECT session_id FROM role_conversations
+                              WHERE character_id=?''',(character_id,)).fetchone()
+            if row:
+                sid=row['session_id']
+                db.execute(
+                    '''UPDATE sessions
+                       SET provider=?,model_id=?,updated_at=?
+                       WHERE id=?''',
+                    (provider,model_id,timestamp,sid),
+                )
+                db.execute('UPDATE role_conversations SET updated_at=? WHERE character_id=?',
+                           (timestamp,character_id))
+            else:
+                sid=str(uuid4())
+                db.execute('''INSERT INTO sessions
+                              (id,model_mode,created_at,updated_at,character_id,model_id,provider)
+                              VALUES(?,?,?,?,?,?,?)''',
+                           (sid,mode,timestamp,timestamp,character_id,model_id,provider))
+                db.execute('''INSERT INTO role_conversations
+                              (character_id,session_id,created_at,updated_at)
+                              VALUES(?,?,?,?)''',
+                           (character_id,sid,timestamp,timestamp))
+        return self.get(sid)
+
+    def get_role_conversation(self,character_id):
+        with self.connect() as db:
+            row=db.execute('''SELECT session_id FROM role_conversations
+                              WHERE character_id=?''',(character_id,)).fetchone()
+            if row is None:
+                return None
+            return self.get(row['session_id'])
+
+    def clear_role_conversation(self,character_id):
+        current=self.get_role_conversation(character_id)
+        if current is None:
+            raise KeyError(character_id)
+        with self.connect() as db:
+            db.execute('DELETE FROM messages WHERE session_id=?',(current['id'],))
+            db.execute('DELETE FROM session_memories WHERE session_id=?',(current['id'],))
+            db.execute('DELETE FROM session_memory_versions WHERE session_id=?',(current['id'],))
+            db.execute('DELETE FROM uploaded_images WHERE session_id=?',(current['id'],))
+            db.execute('DELETE FROM character_state WHERE character_id=?',(character_id,))
+            db.execute('DELETE FROM long_term_memories WHERE character_id=?',(character_id,))
+            db.execute('DELETE FROM state_transitions WHERE character_id=?',(character_id,))
+            db.execute('DELETE FROM character_assets WHERE character_id=?',(character_id,))
+            db.execute('UPDATE sessions SET updated_at=? WHERE id=?',(now(),current['id']))
+            db.execute('UPDATE role_conversations SET updated_at=? WHERE character_id=?',
+                       (now(),character_id))
+        return self.get(current['id'])
 
     def get(self,sid):
         with self.connect() as db:
@@ -82,7 +227,28 @@ class ChatStore:
                 raise KeyError(sid)
             result=dict(row)
             result['messages']=[dict(r) for r in db.execute(
-                'SELECT id,role,content,created_at FROM messages WHERE session_id=? ORDER BY id',(sid,))]
+                '''SELECT m.id,m.role,m.content,m.display_json,m.created_at,
+                          i.id AS image_id,i.mime_type AS image_mime_type,
+                          i.width AS image_width,i.height AS image_height
+                   FROM messages m
+                   LEFT JOIN uploaded_images i ON i.message_id=m.id
+                   WHERE m.session_id=? ORDER BY m.id''',(sid,))]
+            for message in result['messages']:
+                raw_display=message.pop('display_json',None)
+                if raw_display:
+                    try:
+                        message['display']=json.loads(raw_display)
+                    except (TypeError,ValueError,json.JSONDecodeError):
+                        message['display']=None
+                else:
+                    message['display']=None
+                if message.get('image_id'):
+                    message['image']={
+                        'id':message.pop('image_id'),
+                        'mime_type':message.pop('image_mime_type'),
+                        'width':message.pop('image_width'),
+                        'height':message.pop('image_height'),
+                    }
             return result
 
     def list(self,limit=50,offset=0,nonempty=False,query=''):
@@ -105,14 +271,63 @@ class ChatStore:
                 row['title']=' '.join((row['title'] or '新对话').split())[:40]
             return rows
 
-    def save_turn(self,sid,question,answer):
+    def save_turn(self,sid,question,answer,image_id=None,display=None):
         timestamp=now()
         with self.connect() as db:
-            db.execute('INSERT INTO messages(session_id,role,content,created_at) VALUES(?,?,?,?)',
-                       (sid,'user',question,timestamp))
-            db.execute('INSERT INTO messages(session_id,role,content,created_at) VALUES(?,?,?,?)',
-                       (sid,'assistant',answer,timestamp))
+            user_cursor=db.execute(
+                'INSERT INTO messages(session_id,role,content,created_at) VALUES(?,?,?,?)',
+                (sid,'user',question,timestamp))
+            if image_id:
+                cursor=db.execute(
+                    '''UPDATE uploaded_images SET message_id=?
+                       WHERE id=? AND session_id=? AND message_id IS NULL''',
+                    (user_cursor.lastrowid,image_id,sid))
+                if cursor.rowcount!=1:
+                    raise ValueError('图片附件不存在、已使用或不属于当前对话')
+            assistant_cursor=db.execute(
+                '''INSERT INTO messages(
+                       session_id,role,content,display_json,created_at)
+                   VALUES(?,?,?,?,?)''',
+                (
+                    sid,'assistant',answer,
+                    json.dumps(display,ensure_ascii=False) if display else None,
+                    timestamp,
+                ),
+            )
             db.execute('UPDATE sessions SET updated_at=? WHERE id=?',(timestamp,sid))
+            return {
+                'user_message_id':user_cursor.lastrowid,
+                'assistant_message_id':assistant_cursor.lastrowid,
+            }
+
+    def ensure_opening_message(self,sid,content):
+        """Persist one role-play opening only when the conversation is empty."""
+        opening=str(content or '').strip()
+        if not opening:
+            return False
+        timestamp=now()
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute(
+                'SELECT 1 FROM messages WHERE session_id=? LIMIT 1',
+                (sid,),
+            ).fetchone() is not None:
+                return False
+            if db.execute(
+                'SELECT 1 FROM sessions WHERE id=?',
+                (sid,),
+            ).fetchone() is None:
+                raise KeyError(sid)
+            db.execute(
+                '''INSERT INTO messages(session_id,role,content,created_at)
+                   VALUES(?,?,?,?)''',
+                (sid,'assistant',opening,timestamp),
+            )
+            db.execute(
+                'UPDATE sessions SET updated_at=? WHERE id=?',
+                (timestamp,sid),
+            )
+            return True
 
     def clear(self,sid):
         with self.connect() as db:
@@ -125,6 +340,7 @@ class ChatStore:
 
     def delete_session(self,sid):
         with self.connect() as db:
+            db.execute('DELETE FROM role_conversations WHERE session_id=?',(sid,))
             cursor=db.execute('DELETE FROM sessions WHERE id=?',(sid,))
             if cursor.rowcount == 0:
                 raise KeyError(sid)
@@ -217,6 +433,138 @@ class ChatStore:
 
     def delete_character_card(self,character_id):
         with self.connect() as db:
+            db.execute('DELETE FROM role_conversations WHERE character_id=?',(character_id,))
+            db.execute('DELETE FROM character_state WHERE character_id=?',(character_id,))
+            db.execute('DELETE FROM long_term_memories WHERE character_id=?',(character_id,))
+            db.execute('DELETE FROM state_transitions WHERE character_id=?',(character_id,))
+            db.execute('DELETE FROM character_assets WHERE character_id=?',(character_id,))
             cursor=db.execute('DELETE FROM character_cards WHERE id=?',(character_id,))
             if cursor.rowcount == 0:
                 raise KeyError(character_id)
+
+    def get_setting(self,key,default=None):
+        with self.connect() as db:
+            row=db.execute('SELECT value FROM app_settings WHERE key=?',(key,)).fetchone()
+            if row is None:
+                return default
+            try:
+                return json.loads(row['value'])
+            except json.JSONDecodeError:
+                return row['value']
+
+    def set_setting(self,key,value):
+        encoded=json.dumps(value,ensure_ascii=False,separators=(',',':'))
+        with self.connect() as db:
+            db.execute('''INSERT INTO app_settings(key,value,updated_at)
+                          VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET
+                          value=excluded.value,updated_at=excluded.updated_at''',
+                       (key,encoded,now()))
+        return value
+
+    def delete_setting(self,key):
+        with self.connect() as db:
+            cursor=db.execute('DELETE FROM app_settings WHERE key=?',(key,))
+            return cursor.rowcount>0
+
+    def record_usage(self,request_id,provider,model,session_id,prompt_tokens,
+                     completion_tokens,cached_tokens=0,usage_day=None):
+        usage_day=usage_day or date.today().isoformat()
+        with self.connect() as db:
+            db.execute('''INSERT INTO model_usage
+                          (request_id,provider,model,session_id,prompt_tokens,
+                           completion_tokens,cached_tokens,usage_day,created_at)
+                          VALUES(?,?,?,?,?,?,?,?,?)''',
+                       (request_id,provider,model,session_id,int(prompt_tokens),
+                        int(completion_tokens),int(cached_tokens),usage_day,now()))
+        return self.usage_for_day(provider,usage_day)
+
+    def usage_for_day(self,provider,usage_day=None):
+        usage_day=usage_day or date.today().isoformat()
+        with self.connect() as db:
+            row=db.execute('''SELECT
+                                COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
+                                COALESCE(SUM(completion_tokens),0) AS completion_tokens,
+                                COALESCE(SUM(cached_tokens),0) AS cached_tokens,
+                                COUNT(*) AS calls
+                              FROM model_usage WHERE provider=? AND usage_day=?''',
+                           (provider,usage_day)).fetchone()
+            result=dict(row)
+            result['total_tokens']=result['prompt_tokens']+result['completion_tokens']
+            result['usage_day']=usage_day
+            return result
+
+    def save_image_metadata(self,image):
+        with self.connect() as db:
+            db.execute('''INSERT INTO uploaded_images
+                          (id,session_id,message_id,file_path,mime_type,byte_size,
+                           sha256,width,height,description,created_at)
+                          VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                       (image['id'],image['session_id'],image.get('message_id'),
+                        image['file_path'],image['mime_type'],int(image['byte_size']),
+                        image['sha256'],int(image['width']),int(image['height']),
+                        image.get('description',''),now()))
+        return self.get_image(image['id'],session_id=image['session_id'])
+
+    def get_image(self,image_id,session_id=None):
+        query='SELECT * FROM uploaded_images WHERE id=?'
+        params=[image_id]
+        if session_id is not None:
+            query+=' AND session_id=?';params.append(session_id)
+        with self.connect() as db:
+            row=db.execute(query,tuple(params)).fetchone()
+            if row is None:
+                raise KeyError(image_id)
+            return dict(row)
+
+    def list_images_for_session(self,session_id):
+        with self.connect() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT * FROM uploaded_images WHERE session_id=? ORDER BY created_at',
+                (session_id,))]
+
+    def save_character_asset(self,asset):
+        with self.connect() as db:
+            db.execute('''INSERT INTO character_assets
+                          (id,character_id,asset_type,file_path,mime_type,sha256,
+                           prompt,seed,metadata_json,created_at)
+                          VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                       (asset['id'],asset['character_id'],asset['asset_type'],
+                        asset['file_path'],asset.get('mime_type','image/webp'),
+                        asset['sha256'],asset.get('prompt',''),asset.get('seed'),
+                        json.dumps(asset.get('metadata',{}),ensure_ascii=False),
+                        now()))
+        return self.get_character_asset(asset['id'])
+
+    def get_character_asset(self,asset_id):
+        with self.connect() as db:
+            row=db.execute('SELECT * FROM character_assets WHERE id=?',(asset_id,)).fetchone()
+            if row is None:
+                raise KeyError(asset_id)
+            result=dict(row)
+            result['metadata']=json.loads(result.pop('metadata_json') or '{}')
+            return result
+
+    def latest_character_asset(self,character_id,asset_type=None):
+        query='SELECT * FROM character_assets WHERE character_id=?'
+        params=[character_id]
+        if asset_type:
+            query+=' AND asset_type=?';params.append(asset_type)
+        query+=' ORDER BY created_at DESC LIMIT 1'
+        with self.connect() as db:
+            row=db.execute(query,tuple(params)).fetchone()
+            if row is None:
+                return None
+            result=dict(row)
+            result['metadata']=json.loads(result.pop('metadata_json') or '{}')
+            return result
+
+    def list_character_assets(self,character_id):
+        with self.connect() as db:
+            rows=[]
+            for row in db.execute(
+                    'SELECT * FROM character_assets WHERE character_id=? ORDER BY created_at',
+                    (character_id,)):
+                item=dict(row)
+                item['metadata']=json.loads(item.pop('metadata_json') or '{}')
+                rows.append(item)
+            return rows
